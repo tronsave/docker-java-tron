@@ -232,7 +232,7 @@ sed -i -e "s/{CONTRACT_TOPIC_FILTER_PLACEHOLDER}/${CONFIG_CONTRACT_TOPIC_FILTER}
 sed -i -e "s/{RPC_FULL_NODE}/${RPC_FULL_NODE}/g" ${CONFIG_FILE}
 sed -i -e "s/{RPC_SOLIDITY_NODE}/${RPC_SOLIDITY_NODE}/g" ${CONFIG_FILE}
 
-COMMAND="java -jar /usr/local/tron/FullNode.jar -c ${CONFIG_FILE} -d /data ${ES_FLAG} ${WITNESS_FLAG}"
+COMMAND="java -Xmx24g -XX:+UseConcMarkSweepGC -jar /usr/local/tron/FullNode.jar -c ${CONFIG_FILE} -d /data ${ES_FLAG} ${WITNESS_FLAG}"
 
 echo ${COMMAND}
 exec ${COMMAND}
