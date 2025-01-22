@@ -232,7 +232,7 @@ sed -i -e "s/{CONTRACT_TOPIC_FILTER_PLACEHOLDER}/${CONFIG_CONTRACT_TOPIC_FILTER}
 sed -i -e "s/{RPC_FULL_NODE}/${RPC_FULL_NODE}/g" ${CONFIG_FILE}
 sed -i -e "s/{RPC_SOLIDITY_NODE}/${RPC_SOLIDITY_NODE}/g" ${CONFIG_FILE}
 
-COMMAND="java -Xms9G -Xmx9G -XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=256m -XX:MaxMetaspaceSize=512m -XX:MaxDirectMemorySize=1G -XX:+PrintGCDetails -XX:+PrintGCDateStamps  -Xloggc:gc.log -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+HeapDumpOnOutOfMemoryError -XX:+UseCMSInitiatingOccupancyOnly  -XX:CMSInitiatingOccupancyFraction=70 -jar /usr/local/tron/FullNode.jar -c ${CONFIG_FILE} -d /data ${ES_FLAG} ${WITNESS_FLAG} >> start.log 2>&1 &"
+COMMAND="java -Xms9G -Xmx9G -XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=256m -XX:MaxMetaspaceSize=512m -XX:MaxDirectMemorySize=1G -XX:+PrintGCDetails -XX:+PrintGCDateStamps  -Xloggc:gc.log -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+HeapDumpOnOutOfMemoryError -XX:+UseCMSInitiatingOccupancyOnly  -XX:CMSInitiatingOccupancyFraction=70 -jar /usr/local/tron/FullNode.jar -c ${CONFIG_FILE} -d /data ${ES_FLAG} ${WITNESS_FLAG}"
 
 echo ${COMMAND}
 exec ${COMMAND}
