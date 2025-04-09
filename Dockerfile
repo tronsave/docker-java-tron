@@ -18,6 +18,15 @@ RUN cd event-plugin && \
     ./gradlew build -x test
 
 FROM openjdk:8-jre
+# Install libgoogle-perftools4 for tcmalloc
+RUN apt-get update && \
+    apt-get install -y libgoogle-perftools4 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Optional: Set tcmalloc preload
+ENV LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libtcmalloc.so.4"
+ENV TCMALLOC_RELEASE_RATE=10
 
 COPY --from=build /src/java-tron/build/libs/FullNode.jar /usr/local/tron/FullNode.jar
 COPY --from=build-plugin /src/event-plugin/build/plugins/ /usr/local/tron/plugins/
