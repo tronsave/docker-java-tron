@@ -233,5 +233,19 @@ sed -i -e "s/{RPC_FULL_NODE}/${RPC_FULL_NODE}/g" ${CONFIG_FILE}
 sed -i -e "s/{RPC_SOLIDITY_NODE}/${RPC_SOLIDITY_NODE}/g" ${CONFIG_FILE}
 
 COMMAND="java -Xms16G -Xmx16G -XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2G -XX:MaxDirectMemorySize=2G -XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:CMSInitiatingOccupancyFraction=70 -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -XX:+UseNUMA -XX:+AlwaysPreTouch -jar /usr/local/tron/FullNode.jar -c ${CONFIG_FILE} -d /data ${ES_FLAG} ${WITNESS_FLAG}"
+if [[ -z "${NETWORK}" ]] || [[ "${NETWORK}" == "mainnet" ]]; then
+  # Network set to mainnet
+  :
+elif [[ "${NETWORK}" == "nile" ]]; then
+  # Network set to nile
+  COMMAND="java -Xms8G -Xmx8G -XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2G -XX:MaxDirectMemorySize=2G -XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:CMSInitiatingOccupancyFraction=70 -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -XX:+UseNUMA -XX:+AlwaysPreTouch -jar /usr/local/tron/FullNode.jar -c ${CONFIG_FILE} -d /data ${ES_FLAG} ${WITNESS_FLAG}"  :
+elif [[ "${NETWORK}" == "dev" ]]; then
+  # Network set to dev
+  CONFIG_FILE=/etc/tron/dev_config.conf
+  :
+else
+  echo "Invalid NETWORK: ${NETWORK}. Must be one of: \"mainnet\", \"nile\", \"dev\""
+  exit 1
+fi
 echo ${COMMAND}
 exec ${COMMAND}
