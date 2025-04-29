@@ -2,9 +2,14 @@ FROM openjdk:8-jdk AS build
 
 # java-tron repository git tag
 ARG JAVA_TRON_VERSION
+ARG NETWORK
 
 WORKDIR /src
-RUN git clone -b "${JAVA_TRON_VERSION}" --depth 1 https://github.com/tronprotocol/java-tron.git
+RUN if [ "$NETWORK" = "nile" ]; then \
+    git clone -b master --depth 1 https://github.com/tron-nile-testnet/nile-testnet.git java-tron; \
+    else \
+    git clone -b "${JAVA_TRON_VERSION}" --depth 1 https://github.com/tronprotocol/java-tron.git; \
+    fi
 
 RUN cd java-tron && \
     ./gradlew build -x test
