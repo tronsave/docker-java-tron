@@ -7,12 +7,16 @@ ARG NETWORK
 WORKDIR /src
 RUN if [ "$NETWORK" = "nile" ]; then \
         git clone -b master --depth 1 https://github.com/tron-nile-testnet/nile-testnet.git java-tron; \
+    elif [ "$NETWORK" = "mainnet" ]; then \
+        wget https://github.com/tronprotocol/java-tron/releases/download/GreatVoyage-v4.8.0/FullNode.jar; \
     else \
         git clone -b "${JAVA_TRON_VERSION}" --depth 1 https://github.com/tronprotocol/java-tron.git; \
     fi
 
-RUN cd java-tron && \
-    ./gradlew build -x test
+RUN if [ "$NETWORK" != "mainnet" ]; then \
+        cd java-tron && \
+        ./gradlew build -x test; \
+    fi
 
 FROM openjdk:8-jdk AS build-plugin
 
@@ -34,6 +38,7 @@ ENV LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libtcmalloc.so.4"
 ENV TCMALLOC_RELEASE_RATE=10
 
 COPY --from=build /src/java-tron/build/libs/FullNode.jar /usr/local/tron/FullNode.jar
+COPY --from=build /src/FullNode.jar /usr/local/tron/FullNode.jar
 COPY --from=build-plugin /src/event-plugin/build/plugins/ /usr/local/tron/plugins/
 COPY ./configs/ /etc/tron/
 
