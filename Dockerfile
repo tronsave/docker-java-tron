@@ -9,16 +9,17 @@ ARG NETWORK
 
 WORKDIR /src
 RUN if [ "$NETWORK" = "nile" ]; then \
-        git clone -b master --depth 1 https://github.com/tron-nile-testnet/nile-testnet.git java-tron; \
-    elif [ "$NETWORK" = "mainnet" ]; then \
-        wget https://github.com/tronprotocol/java-tron/releases/download/${JAVA_TRON_VERSION}/FullNode.jar; \
-    else \
-        git clone -b "${JAVA_TRON_VERSION}" --depth 1 https://github.com/tronprotocol/java-tron.git; \
-    fi
-
-RUN if [ "$NETWORK" != "mainnet" ]; then \
+        git clone -b master --depth 1 https://github.com/tron-nile-testnet/nile-testnet.git java-tron && \
         cd java-tron && \
-        ./gradlew build -x test; \
+        ./gradlew build -x test && \
+        cp build/libs/FullNode.jar /src/FullNode.jar; \
+    elif [ "$NETWORK" = "mainnet" ]; then \
+        wget https://github.com/tronprotocol/java-tron/releases/download/${JAVA_TRON_VERSION}/FullNode.jar -O /src/FullNode.jar; \
+    else \
+        git clone -b "${JAVA_TRON_VERSION}" --depth 1 https://github.com/tronprotocol/java-tron.git && \
+        cd java-tron && \
+        ./gradlew build -x test && \
+        cp build/libs/FullNode.jar /src/FullNode.jar; \
     fi
 
 FROM openjdk:8-jdk AS build-plugin
@@ -40,7 +41,6 @@ RUN apt-get update && \
 ENV LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libtcmalloc.so.4"
 ENV TCMALLOC_RELEASE_RATE=10
 
-COPY --from=build /src/FullNode.jar /usr/local/tron/FullNode.jar
 COPY --from=build /src/FullNode.jar /usr/local/tron/FullNode.jar
 COPY --from=build-plugin /src/event-plugin/build/plugins/ /usr/local/tron/plugins/
 COPY ./configs/ /etc/tron/
