@@ -40,7 +40,7 @@ RUN apt-get update && \
 ENV LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libtcmalloc.so.4"
 ENV TCMALLOC_RELEASE_RATE=10
 
-COPY --from=build /src/java-tron/build/libs/FullNode.jar /usr/local/tron/FullNode.jar
+COPY --from=build /src/FullNode.jar /usr/local/tron/FullNode.jar
 COPY --from=build /src/FullNode.jar /usr/local/tron/FullNode.jar
 COPY --from=build-plugin /src/event-plugin/build/plugins/ /usr/local/tron/plugins/
 COPY ./configs/ /etc/tron/
