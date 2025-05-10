@@ -1,5 +1,8 @@
 FROM openjdk:8-jdk AS build
 
+# Install wget
+RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+
 # java-tron repository git tag
 ARG JAVA_TRON_VERSION
 ARG NETWORK
@@ -8,7 +11,7 @@ WORKDIR /src
 RUN if [ "$NETWORK" = "nile" ]; then \
         git clone -b master --depth 1 https://github.com/tron-nile-testnet/nile-testnet.git java-tron; \
     elif [ "$NETWORK" = "mainnet" ]; then \
-        wget https://github.com/tronprotocol/java-tron/releases/download/GreatVoyage-v4.8.0/FullNode.jar; \
+        wget https://github.com/tronprotocol/java-tron/releases/download/${JAVA_TRON_VERSION}/FullNode.jar; \
     else \
         git clone -b "${JAVA_TRON_VERSION}" --depth 1 https://github.com/tronprotocol/java-tron.git; \
     fi
