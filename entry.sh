@@ -240,13 +240,13 @@ if [[ -z "${NETWORK}" ]] || [[ "${NETWORK}" == "mainnet" ]]; then
   :
 elif [[ "${NETWORK}" == "nile" ]]; then
   # Network set to nile
-  COMMAND="java -Xms8G -Xmx8G -XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2G -XX:MaxDirectMemorySize=2G -XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:CMSInitiatingOccupancyFraction=70 -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -XX:+UseNUMA -XX:+AlwaysPreTouch -jar /usr/local/tron/FullNode.jar -c ${CONFIG_FILE} -d /data ${ES_FLAG} ${WITNESS_FLAG}"
+  COMMAND="java -Xms8G -Xmx8G -XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2G -XX:MaxDirectMemorySize=2G -XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:CMSInitiatingOccupancyFraction=70 -XX:+UnlockExperimentalVMOptions -XX:+UseNUMA -XX:+AlwaysPreTouch -jar /usr/local/tron/FullNode.jar -c ${CONFIG_FILE} -d /data ${ES_FLAG} ${WITNESS_FLAG}"
   echo ${COMMAND}
   exec ${COMMAND}
   :
 elif [[ "${NETWORK}" == "dev" ]]; then
   # Network set to dev
-  COMMAND="java -Xms8G -Xmx8G -XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2G -XX:MaxDirectMemorySize=2G -XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:CMSInitiatingOccupancyFraction=70 -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -XX:+UseNUMA -XX:+AlwaysPreTouch -jar /usr/local/tron/FullNode.jar -c ${CONFIG_FILE} -d /data ${ES_FLAG} ${WITNESS_FLAG}"
+  COMMAND="java -Xms8G -Xmx8G -XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2G -XX:MaxDirectMemorySize=2G -XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:CMSInitiatingOccupancyFraction=70 -XX:+UnlockExperimentalVMOptions -XX:+UseNUMA -XX:+AlwaysPreTouch -jar /usr/local/tron/FullNode.jar -c ${CONFIG_FILE} -d /data ${ES_FLAG} ${WITNESS_FLAG}"
   echo ${COMMAND}
   exec ${COMMAND}
   :
