@@ -1,7 +1,7 @@
-FROM ibmjava:8-jre AS build
+FROM openjdk:9-b136-jdk AS build
 
 # Install wget
-RUN apt-get update && apt-get install -y wget git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
 
 # java-tron repository git tag
 ARG JAVA_TRON_VERSION
@@ -22,9 +22,7 @@ RUN if [ "$NETWORK" = "nile" ]; then \
         cp build/libs/FullNode.jar /src/FullNode.jar; \
     fi
 
-FROM ibmjava:8-jre AS build-plugin
-
-RUN apt-get update && apt-get install -y git
+FROM openjdk:9-b136-jdk AS build-plugin
 
 WORKDIR /src
 RUN git clone --depth 1 https://github.com/tronprotocol/event-plugin.git
@@ -32,7 +30,7 @@ RUN git clone --depth 1 https://github.com/tronprotocol/event-plugin.git
 RUN cd event-plugin && \
     ./gradlew build -x test
 
-FROM ibmjava:8-jre
+FROM openjdk:9-b139-jre
 # Install libgoogle-perftools4 for tcmalloc
 RUN apt-get update && \
     apt-get install -y libgoogle-perftools4 && \
