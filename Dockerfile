@@ -1,7 +1,7 @@
-FROM amazoncorretto:8-al2023-jdk AS build
+FROM ibmjava:8 AS build
 
 # Install wget
-RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y wget git && rm -rf /var/lib/apt/lists/*
 
 # java-tron repository git tag
 ARG JAVA_TRON_VERSION
@@ -24,13 +24,15 @@ RUN if [ "$NETWORK" = "nile" ]; then \
 
 FROM amazoncorretto:8-al2023-jdk AS build-plugin
 
+RUN apt-get update && apt-get install -y git
+
 WORKDIR /src
 RUN git clone --depth 1 https://github.com/tronprotocol/event-plugin.git
 
 RUN cd event-plugin && \
     ./gradlew build -x test
 
-FROM amazoncorretto:8-al2023-jre
+FROM ibmjava:8-jre
 # Install libgoogle-perftools4 for tcmalloc
 RUN apt-get update && \
     apt-get install -y libgoogle-perftools4 && \
