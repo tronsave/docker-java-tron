@@ -1,4 +1,4 @@
-FROM openjdk:9-b136-jdk AS build
+FROM openjdk:8u92-jdk-alpine AS build
 
 # Install wget
 RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
@@ -22,7 +22,7 @@ RUN if [ "$NETWORK" = "nile" ]; then \
         cp build/libs/FullNode.jar /src/FullNode.jar; \
     fi
 
-FROM openjdk:9-b136-jdk AS build-plugin
+FROM openjdk:8u92-jdk-alpine AS build-plugin
 
 WORKDIR /src
 RUN git clone --depth 1 https://github.com/tronprotocol/event-plugin.git
