@@ -1,4 +1,4 @@
-FROM ibmjava:8 AS build
+FROM ibmjava:8-jre AS build
 
 # Install wget
 RUN apt-get update && apt-get install -y wget git && rm -rf /var/lib/apt/lists/*
@@ -22,7 +22,7 @@ RUN if [ "$NETWORK" = "nile" ]; then \
         cp build/libs/FullNode.jar /src/FullNode.jar; \
     fi
 
-FROM amazoncorretto:8-al2023-jdk AS build-plugin
+FROM ibmjava:8-jre AS build-plugin
 
 RUN apt-get update && apt-get install -y git
 
