@@ -30,7 +30,7 @@ RUN git clone --depth 1 https://github.com/tronprotocol/event-plugin.git
 RUN cd event-plugin && \
     ./gradlew build -x test
 
-FROM openjdk:8-jre
+FROM openjdk:9-b179-jdk
 # Install libgoogle-perftools4 for tcmalloc
 RUN apt-get update && \
     apt-get install -y libgoogle-perftools4 && \
