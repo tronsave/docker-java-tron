@@ -233,7 +233,7 @@ public class EntryPoint {
             
             String javaOpts;
             if (network == null || network.isEmpty() || "mainnet".equals(network)) {
-                javaOpts = javaOptsCommon + " -Xms16G -Xmx16G -XX:+AlwaysPreTouch";
+                javaOpts = javaOptsCommon + " -Xms16G -Xmx16G -XX:-AlwaysPreTouch";
             } else {
                 javaOpts = javaOptsCommon + " -Xms8G -Xmx8G -XX:-AlwaysPreTouch";
             }
