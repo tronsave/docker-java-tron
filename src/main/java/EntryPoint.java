@@ -229,14 +229,81 @@ public class EntryPoint {
             Files.write(configPath, content.getBytes());
             
             // Build and execute Java command based on network
-            String javaOptsCommon = "-XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2G -XX:MaxDirectMemorySize=2G -XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:CMSInitiatingOccupancyFraction=70 -XX:-UseNUMA";
-            
-            String javaOpts;
-            if (network == null || network.isEmpty() || "mainnet".equals(network)) {
-                javaOpts = javaOptsCommon + " -Xms16G -Xmx16G -XX:-AlwaysPreTouch";
+            // Get heap size from environment variable, with defaults
+            String heapSizeStr = getEnv("JAVA_HEAP_SIZE");
+            int heapSizeGB;
+            if (heapSizeStr != null && !heapSizeStr.isEmpty()) {
+                try {
+                    heapSizeGB = Integer.parseInt(heapSizeStr);
+                } catch (NumberFormatException e) {
+                    System.err.println("Invalid JAVA_HEAP_SIZE: " + heapSizeStr + ", using default");
+                    heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
+                }
             } else {
-                javaOpts = javaOptsCommon + " -Xms8G -Xmx8G -XX:-AlwaysPreTouch";
+                // Default: 48GB for mainnet (64GB system), 8GB for nile
+                heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
             }
+            
+            // Get CPU count for GC thread optimization
+            int cpuCount = Runtime.getRuntime().availableProcessors();
+            int gcThreads = Math.max(2, Math.min(cpuCount / 4, 16)); // GC threads: 2-16 based on CPU count
+            
+            // Use G1GC for large heaps (better than CMS for >16GB)
+            String javaOptsCommon;
+            if (heapSizeGB >= 16) {
+                // G1GC optimized for large heaps and multiple CPUs
+                javaOptsCommon = String.format(
+                    "-XX:ReservedCodeCacheSize=512m " +
+                    "-XX:MetaspaceSize=512m " +
+                    "-XX:MaxMetaspaceSize=4G " +
+                    "-XX:MaxDirectMemorySize=4G " +
+                    "-XX:+HeapDumpOnOutOfMemoryError " +
+                    "-XX:HeapDumpPath=/data/heap_dump.hprof " +
+                    "-XX:+PrintGCDetails " +
+                    "-XX:+PrintGCDateStamps " +
+                    "-XX:+PrintGCApplicationStoppedTime " +
+                    "-Xloggc:/data/gc.log " +
+                    "-XX:+UseG1GC " +
+                    "-XX:MaxGCPauseMillis=200 " +
+                    "-XX:G1HeapRegionSize=16m " +
+                    "-XX:InitiatingHeapOccupancyPercent=45 " +
+                    "-XX:ConcGCThreads=%d " +
+                    "-XX:ParallelGCThreads=%d " +
+                    "-XX:+ParallelRefProcEnabled " +
+                    "-XX:+UseStringDeduplication " +
+                    "-XX:+DisableExplicitGC",
+                    gcThreads, gcThreads * 2
+                );
+            } else {
+                // CMS for smaller heaps
+                javaOptsCommon = "-XX:ReservedCodeCacheSize=256m " +
+                    "-XX:MetaspaceSize=512m " +
+                    "-XX:MaxMetaspaceSize=2G " +
+                    "-XX:MaxDirectMemorySize=2G " +
+                    "-XX:+HeapDumpOnOutOfMemoryError " +
+                    "-XX:+PrintGCDetails " +
+                    "-XX:+PrintGCDateStamps " +
+                    "-XX:+UseConcMarkSweepGC " +
+                    "-XX:NewRatio=2 " +
+                    "-XX:+CMSScavengeBeforeRemark " +
+                    "-XX:+ParallelRefProcEnabled " +
+                    "-XX:+UseCMSInitiatingOccupancyOnly " +
+                    "-XX:CMSInitiatingOccupancyFraction=70 " +
+                    "-XX:ParallelGCThreads=" + gcThreads;
+            }
+            
+            // Add NUMA support for large heaps on multi-socket systems
+            String numaOpts = "";
+            if (heapSizeGB >= 32 && cpuCount >= 16) {
+                numaOpts = " -XX:+UseNUMA";
+            } else {
+                numaOpts = " -XX:-UseNUMA";
+            }
+            
+            String javaOpts = javaOptsCommon + 
+                String.format(" -Xms%dG -Xmx%dG", heapSizeGB, heapSizeGB) +
+                " -XX:+AlwaysPreTouch" + // Pre-touch memory pages for better performance
+                numaOpts;
             
             // Build command
             List<String> command = new ArrayList<>();
