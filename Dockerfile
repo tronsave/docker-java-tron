@@ -16,7 +16,7 @@ RUN if [ "$NETWORK" = "nile" ]; then \
         wget https://github.com/tronprotocol/java-tron/releases/download/${JAVA_TRON_VERSION}/FullNode.jar -O /src/FullNode.jar; \
     fi
 
-FROM gcr.io/distroless/java:8
+FROM gcr.io/distroless/java:8-debug
 
 # Copy libgoogle-perftools4 from build stage
 # Distroless java:8 is based on Debian and includes standard system libraries
