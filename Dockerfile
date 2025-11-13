@@ -20,6 +20,16 @@ RUN if [ "$NETWORK" = "nile" ]; then \
 COPY ./entry.sh /src/entry.sh
 RUN chmod +x /src/entry.sh
 
+# Copy bash and find its dependencies, then copy them to a staging area
+RUN mkdir -p /src/bash-libs/bin && \
+    cp /bin/bash /src/bash-libs/bin/ && \
+    ldd /bin/bash 2>/dev/null | awk '/=>/ {print $3}' | while read lib; do \
+        if [ -f "$lib" ]; then \
+            mkdir -p "/src/bash-libs$(dirname "$lib")" && \
+            cp "$lib" "/src/bash-libs$lib"; \
+        fi; \
+    done || true
+
 FROM gcr.io/distroless/java:8-debug
 
 # Copy libgoogle-perftools4 from build stage
@@ -29,9 +39,11 @@ FROM gcr.io/distroless/java:8-debug
 COPY --from=build /usr/lib/x86_64-linux-gnu/libtcmalloc.so.4 /usr/lib/x86_64-linux-gnu/libtcmalloc.so.4
 
 # Copy bash and its dependencies from build stage (needed for entry.sh)
-COPY --from=build /bin/bash /bin/bash
-COPY --from=build /lib/x86_64-linux-gnu/libncurses.so.6 /lib/x86_64-linux-gnu/libncurses.so.6
-COPY --from=build /lib/x86_64-linux-gnu/libtinfo.so.6 /lib/x86_64-linux-gnu/libtinfo.so.6
+# Copy bash binary
+COPY --from=build /src/bash-libs/bin/bash /bin/bash
+# Copy all library dependencies preserving their directory structure
+COPY --from=build /src/bash-libs/lib/ /lib/
+COPY --from=build /src/bash-libs/usr/lib/ /usr/lib/
 
 # Optional: Set tcmalloc preload
 ENV LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libtcmalloc.so.4"
