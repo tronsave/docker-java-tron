@@ -197,7 +197,21 @@ public class EntryPoint {
             
             // Update config file with replacements
             Path configPath = Paths.get(configFile);
+            
+            // Validate config file exists
+            if (!Files.exists(configPath)) {
+                System.err.println("ERROR: Config file does not exist: " + configFile);
+                System.exit(1);
+            }
+            
+            if (!Files.isReadable(configPath)) {
+                System.err.println("ERROR: Config file is not readable: " + configFile);
+                System.exit(1);
+            }
+            
+            System.out.println("Reading config file: " + configFile);
             String content = new String(Files.readAllBytes(configPath));
+            System.out.println("Config file size: " + content.length() + " bytes");
             
             // Regex replacements (like sed -i)
             content = content.replaceAll("listen\\.port = .*", "listen.port = " + configP2pPort);
@@ -227,6 +241,15 @@ public class EntryPoint {
             }
             
             Files.write(configPath, content.getBytes());
+            System.out.println("Config file updated successfully");
+            
+            // Validate JAR file exists
+            Path jarPath = Paths.get("/usr/local/tron/FullNode.jar");
+            if (!Files.exists(jarPath)) {
+                System.err.println("ERROR: FullNode.jar does not exist: /usr/local/tron/FullNode.jar");
+                System.exit(1);
+            }
+            System.out.println("FullNode.jar found: " + Files.size(jarPath) + " bytes");
             
             // Build and execute Java command based on network
             // Get heap size from environment variable, with defaults
@@ -300,9 +323,13 @@ public class EntryPoint {
                 numaOpts = " -XX:-UseNUMA";
             }
             
+            // For very large heaps, AlwaysPreTouch can take a long time or fail
+            // Only enable it for heaps <= 32GB to avoid startup issues
+            String alwaysPreTouch = (heapSizeGB <= 32) ? " -XX:+AlwaysPreTouch" : " -XX:-AlwaysPreTouch";
+            
             String javaOpts = javaOptsCommon + 
                 String.format(" -Xms%dG -Xmx%dG", heapSizeGB, heapSizeGB) +
-                " -XX:+AlwaysPreTouch" + // Pre-touch memory pages for better performance
+                alwaysPreTouch +
                 numaOpts;
             
             // Build command
@@ -328,12 +355,45 @@ public class EntryPoint {
             }
             
             System.out.println("Executing: " + String.join(" ", command));
+            System.out.println("Working directory: /data");
+            System.out.println("Heap size: " + heapSizeGB + "GB");
+            System.out.println("CPU count: " + cpuCount);
+            System.out.println("GC threads: " + gcThreads);
+            System.out.flush();
             
             // Execute the command
             ProcessBuilder pb = new ProcessBuilder(command);
-            pb.inheritIO();
+            pb.redirectErrorStream(true); // Merge stderr into stdout
+            
+            // Set working directory
+            pb.directory(new File("/data"));
+            
             Process process = pb.start();
+            
+            // Stream output in real-time to see what's happening
+            Thread outputThread = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        System.out.println(line);
+                        System.out.flush();
+                    }
+                } catch (IOException e) {
+                    System.err.println("Error reading process output: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            });
+            outputThread.start();
+            
             int exitCode = process.waitFor();
+            outputThread.join(1000); // Wait for output thread to finish
+            
+            if (exitCode != 0) {
+                System.err.println("Process exited with code: " + exitCode);
+                System.err.flush();
+            }
+            
             System.exit(exitCode);
             
         } catch (Exception e) {
