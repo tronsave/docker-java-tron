@@ -327,7 +327,8 @@ public class EntryPoint {
             // Build and execute Java command based on network
             // Get heap size from environment variable, or auto-detect from system memory
             String heapSizeStr = getEnv("JAVA_HEAP_SIZE");
-            int heapSizeGB;
+            // Initialize with default value to satisfy compiler
+            int heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
             boolean heapSizeSet = false;
             
             if (heapSizeStr != null && !heapSizeStr.isEmpty()) {
@@ -345,8 +346,9 @@ public class EntryPoint {
             if (!heapSizeSet) {
                 long systemMemoryGB = detectSystemMemoryGB();
                 if (systemMemoryGB > 0) {
-                    heapSizeGB = calculateOptimalHeapSize(systemMemoryGB, network);
-                    if (heapSizeGB > 0) {
+                    int calculatedHeap = calculateOptimalHeapSize(systemMemoryGB, network);
+                    if (calculatedHeap > 0) {
+                        heapSizeGB = calculatedHeap;
                         System.out.println("Auto-calculated heap size: " + heapSizeGB + "GB (75% of " + systemMemoryGB + "GB system memory)");
                     } else {
                         // Fall back to defaults
