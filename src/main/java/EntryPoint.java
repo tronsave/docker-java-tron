@@ -1,6 +1,7 @@
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
+import java.security.MessageDigest;
 
 public class EntryPoint {
     // Default configuration values
@@ -251,6 +252,14 @@ public class EntryPoint {
             }
             System.out.println("FullNode.jar found: " + Files.size(jarPath) + " bytes");
             
+            // Calculate and print MD5 hash
+            try {
+                String md5Hash = calculateMD5(jarPath);
+                System.out.println("FullNode.jar MD5: " + md5Hash);
+            } catch (IOException e) {
+                System.err.println("WARNING: Failed to calculate MD5 hash: " + e.getMessage());
+            }
+            
             // Build and execute Java command based on network
             // Get heap size from environment variable, with defaults
             String heapSizeStr = getEnv("JAVA_HEAP_SIZE");
@@ -461,6 +470,29 @@ public class EntryPoint {
             // Ignore
         }
         return -1;
+    }
+    
+    // Helper method to calculate MD5 hash of a file
+    private static String calculateMD5(Path filePath) throws IOException {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            try (InputStream is = Files.newInputStream(filePath);
+                 BufferedInputStream bis = new BufferedInputStream(is)) {
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = bis.read(buffer)) != -1) {
+                    md.update(buffer, 0, bytesRead);
+                }
+            }
+            byte[] hashBytes = md.digest();
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashBytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException("MD5 algorithm not available", e);
+        }
     }
 }
 
