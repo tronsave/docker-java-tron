@@ -580,18 +580,84 @@ public class EntryPoint {
                 }
             }
             
-            // Get CPU count for GC thread optimization (reuse already detected cpuCount)
-            int gcThreads = Math.max(2, Math.min(cpuCount / 4, 16)); // GC threads: 2-16 based on CPU count
+            // Calculate optimal GC threads based on CPU count
+            // For G1GC: use CPU/4 for concurrent threads, CPU/2 for parallel threads
+            int gcConcurrentThreads = Math.max(2, Math.min(cpuCount / 4, 16));
+            int gcParallelThreads = Math.max(2, Math.min(cpuCount / 2, 32));
             
-            // Use G1GC for large heaps (better than CMS for >16GB)
+            // Calculate optimal code cache size based on CPU and heap
+            // More CPUs and larger heaps benefit from larger code cache
+            String codeCacheSize;
+            if (heapSizeGB >= 48 && cpuCount >= 12) {
+                codeCacheSize = "768m";
+            } else if (heapSizeGB >= 32 || cpuCount >= 8) {
+                codeCacheSize = "512m";
+            } else {
+                codeCacheSize = "256m";
+            }
+            
+            // Calculate optimal metaspace size based on heap size
+            // Larger heaps typically need more metaspace
+            String metaspaceSize;
+            String maxMetaspaceSize;
+            if (heapSizeGB >= 48) {
+                metaspaceSize = "768m";
+                maxMetaspaceSize = "6G";
+            } else if (heapSizeGB >= 32) {
+                metaspaceSize = "512m";
+                maxMetaspaceSize = "4G";
+            } else if (heapSizeGB >= 16) {
+                metaspaceSize = "512m";
+                maxMetaspaceSize = "2G";
+            } else {
+                metaspaceSize = "256m";
+                maxMetaspaceSize = "1G";
+            }
+            
+            // Calculate optimal direct memory size based on heap
+            // Direct memory is used for NIO operations, scale with heap
+            String maxDirectMemorySize;
+            if (heapSizeGB >= 48) {
+                maxDirectMemorySize = "8G";
+            } else if (heapSizeGB >= 32) {
+                maxDirectMemorySize = "6G";
+            } else if (heapSizeGB >= 16) {
+                maxDirectMemorySize = "4G";
+            } else {
+                maxDirectMemorySize = "2G";
+            }
+            
+            // Use G1GC for heaps >= 8GB (better than CMS for modern JVMs)
             String javaOptsCommon;
-            if (heapSizeGB >= 16) {
-                // G1GC optimized for large heaps and multiple CPUs
+            if (heapSizeGB >= 8) {
+                // Calculate optimal G1GC region size based on heap
+                // Region size should be power of 2 between 1MB and 32MB
+                // For large heaps, use larger regions to reduce overhead
+                String g1RegionSize;
+                if (heapSizeGB >= 64) {
+                    g1RegionSize = "32m";
+                } else if (heapSizeGB >= 32) {
+                    g1RegionSize = "16m";
+                } else if (heapSizeGB >= 16) {
+                    g1RegionSize = "8m";
+                } else {
+                    g1RegionSize = "4m";
+                }
+                
+                // Calculate optimal GC pause target based on heap size
+                // Larger heaps can tolerate slightly longer pauses
+                int maxGCPauseMillis = heapSizeGB >= 32 ? 300 : (heapSizeGB >= 16 ? 200 : 150);
+                
+                // Calculate initiating heap occupancy percent
+                // Start GC earlier for larger heaps to avoid long pauses
+                int initiatingHeapOccupancyPercent = heapSizeGB >= 48 ? 40 : (heapSizeGB >= 32 ? 45 : 50);
+                
+                // G1GC optimized for large heaps and multiple CPUs (Java 8 compatible)
                 javaOptsCommon = String.format(
-                    "-XX:ReservedCodeCacheSize=512m " +
-                    "-XX:MetaspaceSize=512m " +
-                    "-XX:MaxMetaspaceSize=4G " +
-                    "-XX:MaxDirectMemorySize=4G " +
+                    "-XX:ReservedCodeCacheSize=%s " +
+                    "-XX:MetaspaceSize=%s " +
+                    "-XX:MaxMetaspaceSize=%s " +
+                    "-XX:MaxDirectMemorySize=%s " +
                     "-XX:+HeapDumpOnOutOfMemoryError " +
                     "-XX:HeapDumpPath=/data/heap_dump.hprof " +
                     "-XX:+PrintGCDetails " +
@@ -599,22 +665,25 @@ public class EntryPoint {
                     "-XX:+PrintGCApplicationStoppedTime " +
                     "-Xloggc:/data/gc.log " +
                     "-XX:+UseG1GC " +
-                    "-XX:MaxGCPauseMillis=200 " +
-                    "-XX:G1HeapRegionSize=16m " +
-                    "-XX:InitiatingHeapOccupancyPercent=45 " +
+                    "-XX:MaxGCPauseMillis=%d " +
+                    "-XX:G1HeapRegionSize=%s " +
+                    "-XX:InitiatingHeapOccupancyPercent=%d " +
                     "-XX:ConcGCThreads=%d " +
                     "-XX:ParallelGCThreads=%d " +
                     "-XX:+ParallelRefProcEnabled " +
                     "-XX:+UseStringDeduplication " +
                     "-XX:+DisableExplicitGC",
-                    gcThreads, gcThreads * 2
+                    codeCacheSize, metaspaceSize, maxMetaspaceSize, maxDirectMemorySize,
+                    maxGCPauseMillis, g1RegionSize, initiatingHeapOccupancyPercent,
+                    gcConcurrentThreads, gcParallelThreads
                 );
             } else {
-                // CMS for smaller heaps
-                javaOptsCommon = "-XX:ReservedCodeCacheSize=256m " +
-                    "-XX:MetaspaceSize=512m " +
-                    "-XX:MaxMetaspaceSize=2G " +
-                    "-XX:MaxDirectMemorySize=2G " +
+                // CMS for smaller heaps (< 8GB)
+                javaOptsCommon = String.format(
+                    "-XX:ReservedCodeCacheSize=%s " +
+                    "-XX:MetaspaceSize=%s " +
+                    "-XX:MaxMetaspaceSize=%s " +
+                    "-XX:MaxDirectMemorySize=%s " +
                     "-XX:+HeapDumpOnOutOfMemoryError " +
                     "-XX:+PrintGCDetails " +
                     "-XX:+PrintGCDateStamps " +
@@ -624,10 +693,14 @@ public class EntryPoint {
                     "-XX:+ParallelRefProcEnabled " +
                     "-XX:+UseCMSInitiatingOccupancyOnly " +
                     "-XX:CMSInitiatingOccupancyFraction=70 " +
-                    "-XX:ParallelGCThreads=" + gcThreads;
+                    "-XX:ParallelGCThreads=%d",
+                    codeCacheSize, metaspaceSize, maxMetaspaceSize, maxDirectMemorySize,
+                    gcParallelThreads
+                );
             }
             
             // Add NUMA support for large heaps on multi-socket systems
+            // NUMA helps when heap > 32GB and CPU >= 16 cores
             String numaOpts = "";
             if (heapSizeGB >= 32 && cpuCount >= 16) {
                 numaOpts = " -XX:+UseNUMA";
@@ -637,12 +710,41 @@ public class EntryPoint {
             
             // For very large heaps, AlwaysPreTouch can take a long time or fail
             // Only enable it for heaps <= 32GB to avoid startup issues
+            // For larger heaps, let OS handle memory allocation on demand
             String alwaysPreTouch = (heapSizeGB <= 32) ? " -XX:+AlwaysPreTouch" : " -XX:-AlwaysPreTouch";
+            
+            // Add JIT compiler optimizations for high-performance servers
+            String compilerOpts = "";
+            if (cpuCount >= 8) {
+                // Tiered compilation with more aggressive optimizations for multi-core systems
+                compilerOpts = " -XX:+TieredCompilation " +
+                              "-XX:TieredStopAtLevel=4 " +
+                              "-XX:CompileThreshold=10000 " +
+                              "-XX:+UseCompressedOops " +
+                              "-XX:+UseCompressedClassPointers";
+            } else {
+                compilerOpts = " -XX:+TieredCompilation " +
+                              "-XX:+UseCompressedOops " +
+                              "-XX:+UseCompressedClassPointers";
+            }
+            
+            // Add performance optimizations for large memory systems
+            String performanceOpts = "";
+            if (heapSizeGB >= 32) {
+                // Enable aggressive optimizations for large heaps
+                performanceOpts = " -XX:+AggressiveOpts " +
+                                 "-XX:+UseLargePages " +
+                                 "-XX:LargePageSizeInBytes=2m";
+            } else if (heapSizeGB >= 16) {
+                performanceOpts = " -XX:+AggressiveOpts";
+            }
             
             String javaOpts = javaOptsCommon + 
                 String.format(" -Xms%dG -Xmx%dG", heapSizeGB, heapSizeGB) +
                 alwaysPreTouch +
-                numaOpts;
+                numaOpts +
+                compilerOpts +
+                performanceOpts;
             
             // Build command
             List<String> command = new ArrayList<>();
@@ -670,7 +772,18 @@ public class EntryPoint {
             System.out.println("Working directory: /data");
             System.out.println("Heap size: " + heapSizeGB + "GB");
             System.out.println("CPU count: " + cpuCount);
-            System.out.println("GC threads: " + gcThreads);
+            if (heapSizeGB >= 8) {
+                System.out.println("GC Configuration (G1GC):");
+                System.out.println("  Concurrent GC threads: " + gcConcurrentThreads);
+                System.out.println("  Parallel GC threads: " + gcParallelThreads);
+            } else {
+                System.out.println("GC Configuration (CMS):");
+                System.out.println("  Parallel GC threads: " + gcParallelThreads);
+            }
+            System.out.println("JVM Optimizations:");
+            System.out.println("  Code Cache: " + codeCacheSize);
+            System.out.println("  Metaspace: " + metaspaceSize + " (max: " + maxMetaspaceSize + ")");
+            System.out.println("  Direct Memory: " + maxDirectMemorySize);
             
             // Warn if heap size is very large
             if (heapSizeGB > 32) {
