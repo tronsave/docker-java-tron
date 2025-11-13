@@ -359,6 +359,18 @@ public class EntryPoint {
             System.out.println("Heap size: " + heapSizeGB + "GB");
             System.out.println("CPU count: " + cpuCount);
             System.out.println("GC threads: " + gcThreads);
+            
+            // Warn if heap size is very large
+            if (heapSizeGB > 32) {
+                System.out.println("WARNING: Large heap size (" + heapSizeGB + "GB) may cause startup issues.");
+                System.out.println("If the process fails to start, try reducing JAVA_HEAP_SIZE (e.g., 32 or 40)");
+            }
+            
+            // Check available memory (rough estimate)
+            Runtime runtime = Runtime.getRuntime();
+            long maxMemory = runtime.maxMemory();
+            long totalMemory = runtime.totalMemory();
+            System.out.println("EntryPoint JVM - Max memory: " + (maxMemory / 1024 / 1024 / 1024) + "GB, Total: " + (totalMemory / 1024 / 1024 / 1024) + "GB");
             System.out.flush();
             
             // Execute the command
@@ -369,28 +381,62 @@ public class EntryPoint {
             pb.directory(new File("/data"));
             
             Process process = pb.start();
+            System.out.println("Process started, PID: " + getProcessId(process));
+            System.out.flush();
+            
+            // Use a StringBuilder to collect all output
+            StringBuilder outputBuffer = new StringBuilder();
+            final boolean[] processEnded = {false};
             
             // Stream output in real-time to see what's happening
             Thread outputThread = new Thread(() -> {
                 try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(process.getInputStream()))) {
                     String line;
-                    while ((line = reader.readLine()) != null) {
-                        System.out.println(line);
-                        System.out.flush();
+                    while ((line = reader.readLine()) != null || !processEnded[0]) {
+                        if (line != null) {
+                            System.out.println(line);
+                            System.out.flush();
+                            outputBuffer.append(line).append("\n");
+                        } else {
+                            // No more lines, but process might still be running
+                            try {
+                                Thread.sleep(100);
+                            } catch (InterruptedException e) {
+                                break;
+                            }
+                        }
                     }
                 } catch (IOException e) {
-                    System.err.println("Error reading process output: " + e.getMessage());
-                    e.printStackTrace();
+                    if (!processEnded[0]) {
+                        System.err.println("Error reading process output: " + e.getMessage());
+                        e.printStackTrace();
+                    }
                 }
             });
             outputThread.start();
             
+            // Wait for process with a small delay to catch immediate failures
             int exitCode = process.waitFor();
-            outputThread.join(1000); // Wait for output thread to finish
+            processEnded[0] = true;
+            
+            // Give output thread a moment to finish reading
+            outputThread.join(2000);
             
             if (exitCode != 0) {
-                System.err.println("Process exited with code: " + exitCode);
+                System.err.println("\n=== Process exited with code: " + exitCode + " ===");
+                if (outputBuffer.length() == 0) {
+                    System.err.println("No output captured from process.");
+                    System.err.println("This usually means:");
+                    System.err.println("  1. JVM failed to start (check memory allocation)");
+                    System.err.println("  2. Config file has errors");
+                    System.err.println("  3. JAR file is corrupted");
+                    System.err.println("\nTrying to allocate " + heapSizeGB + "GB heap.");
+                    System.err.println("Available CPUs: " + cpuCount);
+                } else {
+                    System.err.println("Process output:");
+                    System.err.println(outputBuffer.toString());
+                }
                 System.err.flush();
             }
             
@@ -402,4 +448,19 @@ public class EntryPoint {
             System.exit(1);
         }
     }
+    
+    // Helper method to get process ID (may not work on all systems)
+    private static long getProcessId(Process process) {
+        try {
+            if (process.getClass().getName().equals("java.lang.UNIXProcess")) {
+                java.lang.reflect.Field field = process.getClass().getDeclaredField("pid");
+                field.setAccessible(true);
+                return field.getLong(process);
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        return -1;
+    }
 }
+
