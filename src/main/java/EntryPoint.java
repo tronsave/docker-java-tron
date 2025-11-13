@@ -143,6 +143,143 @@ public class EntryPoint {
         return calculatedHeapGB;
     }
     
+    /**
+     * Calculate optimal RPC thread count based on CPU cores.
+     * Uses 2x CPU cores for high-performance RPC handling.
+     */
+    private static int calculateRpcThreadCount(int cpuCount) {
+        // Use 2x CPU cores for better RPC throughput, with reasonable limits
+        int threads = cpuCount * 2;
+        // Cap at 64 threads to avoid excessive context switching
+        return Math.min(threads, 64);
+    }
+    
+    /**
+     * Calculate optimal max connections based on available RAM.
+     * More RAM allows for more concurrent connections.
+     */
+    private static int calculateMaxConnections(long systemMemoryGB) {
+        if (systemMemoryGB <= 0) {
+            return 100; // Default
+        }
+        // Scale connections based on RAM: ~10 connections per GB, with reasonable limits
+        int connections = (int) (systemMemoryGB * 10);
+        // Minimum 100, maximum 2000
+        return Math.max(100, Math.min(connections, 2000));
+    }
+    
+    /**
+     * Calculate optimal max HTTP connections based on RAM.
+     */
+    private static int calculateMaxHttpConnections(long systemMemoryGB) {
+        if (systemMemoryGB <= 0) {
+            return 50; // Default
+        }
+        // Scale HTTP connections: ~5 connections per GB, with reasonable limits
+        int connections = (int) (systemMemoryGB * 5);
+        // Minimum 50, maximum 1000
+        return Math.max(50, Math.min(connections, 1000));
+    }
+    
+    /**
+     * Calculate optimal storage cache size based on available RAM.
+     * Uses a portion of available RAM for database cache.
+     */
+    private static long calculateStorageCacheSize(long systemMemoryGB) {
+        if (systemMemoryGB <= 0) {
+            return 536870912L; // Default 512MB
+        }
+        // Use 2-4GB for cache depending on available RAM
+        if (systemMemoryGB >= 64) {
+            return 2147483648L; // 2GB for 64GB+ systems
+        } else if (systemMemoryGB >= 32) {
+            return 1073741824L; // 1GB for 32GB+ systems
+        } else if (systemMemoryGB >= 16) {
+            return 536870912L; // 512MB for 16GB+ systems
+        } else {
+            return 268435456L; // 256MB for smaller systems
+        }
+    }
+    
+    /**
+     * Calculate optimal storage write buffer size based on RAM.
+     */
+    private static long calculateStorageWriteBufferSize(long systemMemoryGB) {
+        if (systemMemoryGB <= 0) {
+            return 67108864L; // Default 64MB
+        }
+        // Scale write buffer: 128MB for 64GB+, 64MB for 32GB+, 32MB otherwise
+        if (systemMemoryGB >= 64) {
+            return 134217728L; // 128MB
+        } else if (systemMemoryGB >= 32) {
+            return 67108864L; // 64MB
+        } else {
+            return 33554432L; // 32MB
+        }
+    }
+    
+    /**
+     * Calculate optimal max open files based on RAM.
+     */
+    private static int calculateMaxOpenFiles(long systemMemoryGB) {
+        if (systemMemoryGB <= 0) {
+            return 50000; // Default
+        }
+        // Scale max open files: 100K for 64GB+, 50K for 32GB+, 25K otherwise
+        if (systemMemoryGB >= 64) {
+            return 100000;
+        } else if (systemMemoryGB >= 32) {
+            return 50000;
+        } else {
+            return 25000;
+        }
+    }
+    
+    /**
+     * Calculate optimal DB compaction threads based on CPU cores.
+     */
+    private static int calculateDbCompactThreads(int cpuCount) {
+        // Use CPU/2 for compaction threads when sync is done
+        return Math.max(2, cpuCount / 2);
+    }
+    
+    /**
+     * Calculate optimal DB level base size based on RAM.
+     */
+    private static int calculateDbMaxBytesForLevelBase(long systemMemoryGB) {
+        if (systemMemoryGB >= 64) {
+            return 512; // 512MB for 64GB+ systems
+        } else if (systemMemoryGB >= 32) {
+            return 256; // 256MB for 32GB+ systems
+        } else {
+            return 128; // 128MB for smaller systems
+        }
+    }
+    
+    /**
+     * Calculate optimal global QPS based on CPU and RAM.
+     */
+    private static int calculateGlobalQps(int cpuCount, long systemMemoryGB) {
+        // Base QPS on CPU: 5000 per core, with RAM multiplier
+        int baseQps = cpuCount * 5000;
+        // Scale with RAM: 1.5x for 64GB+, 1.2x for 32GB+
+        double multiplier = 1.0;
+        if (systemMemoryGB >= 64) {
+            multiplier = 2.0;
+        } else if (systemMemoryGB >= 32) {
+            multiplier = 1.5;
+        }
+        return (int) (baseQps * multiplier);
+    }
+    
+    /**
+     * Calculate optimal per-IP QPS based on global QPS.
+     */
+    private static int calculateGlobalIpQps(int globalQps) {
+        // Per-IP QPS is 20% of global QPS
+        return globalQps / 5;
+    }
+    
     public static void main(String[] args) {
         try {
             // Validate network
@@ -272,6 +409,43 @@ public class EntryPoint {
                 }
             }
             
+            // Detect system resources for dynamic configuration
+            int cpuCount = Runtime.getRuntime().availableProcessors();
+            long systemMemoryGB = detectSystemMemoryGB();
+            
+            // Calculate optimal configuration values based on CPU and RAM
+            int rpcThreadCount = calculateRpcThreadCount(cpuCount);
+            int maxConnections = calculateMaxConnections(systemMemoryGB);
+            int maxHttpConnections = calculateMaxHttpConnections(systemMemoryGB);
+            int maxConnectionsWithSameIp = Math.max(5, maxConnections / 20); // 5% of max connections
+            long storageCacheSize = calculateStorageCacheSize(systemMemoryGB);
+            long storageWriteBufferSize = calculateStorageWriteBufferSize(systemMemoryGB);
+            int maxOpenFiles = calculateMaxOpenFiles(systemMemoryGB);
+            int maxOpenFilesM = (int) (maxOpenFiles * 1.5);
+            int maxOpenFilesL = maxOpenFiles * 2;
+            int dbCompactThreads = calculateDbCompactThreads(cpuCount);
+            int dbMaxBytesForLevelBase = calculateDbMaxBytesForLevelBase(systemMemoryGB);
+            int dbTargetFileSizeBase = dbMaxBytesForLevelBase;
+            int globalQps = calculateGlobalQps(cpuCount, systemMemoryGB);
+            int globalIpQps = calculateGlobalIpQps(globalQps);
+            
+            // RPC-specific calculations
+            int rpcMaxConcurrentCalls = Math.min(100, cpuCount * 8); // Scale with CPU, max 100
+            int rpcFlowControlWindow = systemMemoryGB >= 64 ? 2097152 : 1048576; // 2MB for 64GB+, 1MB otherwise
+            int rpcMaxMessageSize = systemMemoryGB >= 64 ? 8388608 : 4194304; // 8MB for 64GB+, 4MB otherwise
+            int rpcMaxHeaderListSize = systemMemoryGB >= 64 ? 16384 : 8192; // 16KB for 64GB+, 8KB otherwise
+            
+            System.out.println("System Resources Detected:");
+            System.out.println("  CPU Cores: " + cpuCount);
+            System.out.println("  System Memory: " + systemMemoryGB + "GB");
+            System.out.println("Dynamic Configuration Calculated:");
+            System.out.println("  RPC Threads: " + rpcThreadCount);
+            System.out.println("  Max Connections: " + maxConnections);
+            System.out.println("  Max HTTP Connections: " + maxHttpConnections);
+            System.out.println("  Storage Cache: " + (storageCacheSize / 1024 / 1024) + "MB");
+            System.out.println("  Global QPS: " + globalQps);
+            System.out.println("  Global IP QPS: " + globalIpQps);
+            
             // Update config file with replacements
             Path configPath = Paths.get(configFile);
             
@@ -322,6 +496,26 @@ public class EntryPoint {
             content = content.replace("{RPC_SOLIDITY_NODE}", String.valueOf(rpcSolidityNode));
             content = content.replace("{FULL_NODE_PORT}", String.valueOf(configFullNodePort));
             
+            // Dynamic configuration placeholder replacements
+            content = content.replace("{RPC_THREAD_COUNT}", String.valueOf(rpcThreadCount));
+            content = content.replace("{RPC_MAX_CONCURRENT_CALLS}", String.valueOf(rpcMaxConcurrentCalls));
+            content = content.replace("{RPC_FLOW_CONTROL_WINDOW}", String.valueOf(rpcFlowControlWindow));
+            content = content.replace("{RPC_MAX_MESSAGE_SIZE}", String.valueOf(rpcMaxMessageSize));
+            content = content.replace("{RPC_MAX_HEADER_LIST_SIZE}", String.valueOf(rpcMaxHeaderListSize));
+            content = content.replace("{MAX_CONNECTIONS}", String.valueOf(maxConnections));
+            content = content.replace("{MAX_CONNECTIONS_WITH_SAME_IP}", String.valueOf(maxConnectionsWithSameIp));
+            content = content.replace("{MAX_HTTP_CONNECT_NUMBER}", String.valueOf(maxHttpConnections));
+            content = content.replace("{STORAGE_MAX_OPEN_FILES}", String.valueOf(maxOpenFiles));
+            content = content.replace("{STORAGE_MAX_OPEN_FILES_M}", String.valueOf(maxOpenFilesM));
+            content = content.replace("{STORAGE_MAX_OPEN_FILES_L}", String.valueOf(maxOpenFilesL));
+            content = content.replace("{STORAGE_WRITE_BUFFER_SIZE}", String.valueOf(storageWriteBufferSize));
+            content = content.replace("{STORAGE_CACHE_SIZE}", String.valueOf(storageCacheSize));
+            content = content.replace("{DB_COMPACT_THREADS}", String.valueOf(dbCompactThreads));
+            content = content.replace("{DB_MAX_BYTES_FOR_LEVEL_BASE}", String.valueOf(dbMaxBytesForLevelBase));
+            content = content.replace("{DB_TARGET_FILE_SIZE_BASE}", String.valueOf(dbTargetFileSizeBase));
+            content = content.replace("{GLOBAL_QPS}", String.valueOf(globalQps));
+            content = content.replace("{GLOBAL_IP_QPS}", String.valueOf(globalIpQps));
+            
             // Handle SOLIDITY_NODE_PORT placeholder
             if (configSolidityNodePort != null) {
                 content = content.replace("{SOLIDITY_NODE_PORT}", configSolidityNodePort);
@@ -365,7 +559,10 @@ public class EntryPoint {
             
             // Auto-detect heap size from system memory if not explicitly set
             if (!heapSizeSet) {
-                long systemMemoryGB = detectSystemMemoryGB();
+                // Re-detect system memory if needed (in case it wasn't detected earlier)
+                if (systemMemoryGB <= 0) {
+                    systemMemoryGB = detectSystemMemoryGB();
+                }
                 if (systemMemoryGB > 0) {
                     int calculatedHeap = calculateOptimalHeapSize(systemMemoryGB, network);
                     if (calculatedHeap > 0) {
@@ -383,8 +580,7 @@ public class EntryPoint {
                 }
             }
             
-            // Get CPU count for GC thread optimization
-            int cpuCount = Runtime.getRuntime().availableProcessors();
+            // Get CPU count for GC thread optimization (reuse already detected cpuCount)
             int gcThreads = Math.max(2, Math.min(cpuCount / 4, 16)); // GC threads: 2-16 based on CPU count
             
             // Use G1GC for large heaps (better than CMS for >16GB)
@@ -706,4 +902,3 @@ public class EntryPoint {
         return -1;
     }
 }
-
