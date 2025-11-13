@@ -385,6 +385,52 @@ public class EntryPoint {
             long maxMemory = runtime.maxMemory();
             long totalMemory = runtime.totalMemory();
             System.out.println("EntryPoint JVM - Max memory: " + (maxMemory / 1024 / 1024 / 1024) + "GB, Total: " + (totalMemory / 1024 / 1024 / 1024) + "GB");
+            
+            // Try to check system memory and Docker limits
+            try {
+                // Check /sys/fs/cgroup/memory/memory.limit_in_bytes (Docker memory limit)
+                Path dockerMemLimit = Paths.get("/sys/fs/cgroup/memory/memory.limit_in_bytes");
+                if (Files.exists(dockerMemLimit)) {
+                    String memLimitStr = new String(Files.readAllBytes(dockerMemLimit)).trim();
+                    try {
+                        long memLimitBytes = Long.parseLong(memLimitStr);
+                        if (memLimitBytes < Long.MAX_VALUE) {
+                            long memLimitGB = memLimitBytes / 1024 / 1024 / 1024;
+                            System.out.println("Docker memory limit: " + memLimitGB + "GB");
+                            if (memLimitGB < heapSizeGB + 4) {
+                                System.err.println("WARNING: Docker memory limit (" + memLimitGB + "GB) may be too low for " + heapSizeGB + "GB heap.");
+                                System.err.println("Recommended: Set Docker memory limit to at least " + (heapSizeGB + 4) + "GB");
+                            }
+                        }
+                    } catch (NumberFormatException e) {
+                        // Ignore
+                    }
+                }
+                
+                // Check /proc/meminfo for system memory
+                Path memInfo = Paths.get("/proc/meminfo");
+                if (Files.exists(memInfo)) {
+                    List<String> memLines = Files.readAllLines(memInfo);
+                    for (String line : memLines) {
+                        if (line.startsWith("MemTotal:")) {
+                            String[] parts = line.split("\\s+");
+                            if (parts.length >= 2) {
+                                try {
+                                    long memTotalKB = Long.parseLong(parts[1]);
+                                    long memTotalGB = memTotalKB / 1024 / 1024;
+                                    System.out.println("System total memory: " + memTotalGB + "GB");
+                                } catch (NumberFormatException e) {
+                                    // Ignore
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Ignore - these files may not be available
+            }
+            
             System.out.flush();
             
             // Execute the command
@@ -460,13 +506,51 @@ public class EntryPoint {
             });
             errorThread.start();
             
-            // Wait for process with a small delay to catch immediate failures
+            // Give threads a moment to start reading before checking process status
+            // This helps catch immediate failures
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            
+            // Check if process has already exited (immediate failure)
+            boolean exitedImmediately = false;
+            try {
+                int quickExitCode = process.exitValue(); // throws exception if still running
+                exitedImmediately = true;
+                System.err.println("WARNING: Process exited immediately with code: " + quickExitCode);
+                System.err.println("This usually indicates a JVM startup failure.");
+                System.err.flush();
+            } catch (IllegalThreadStateException e) {
+                // Process is still running, which is normal
+            }
+            
+            // Wait for process to complete
             int exitCode = process.waitFor();
             processEnded[0] = true;
             
-            // Give output threads a moment to finish reading
-            outputThread.join(2000);
-            errorThread.join(2000);
+            // Give output threads more time to finish reading, especially for immediate failures
+            int joinTimeout = exitedImmediately ? 3000 : 2000;
+            outputThread.join(joinTimeout);
+            errorThread.join(joinTimeout);
+            
+            // Try to read any remaining bytes from stderr if process exited quickly
+            if (exitedImmediately && errorBuffer.length() == 0) {
+                try {
+                    // Try reading raw bytes from error stream
+                    InputStream errorStream = process.getErrorStream();
+                    byte[] buffer = new byte[8192];
+                    int bytesRead = errorStream.read(buffer);
+                    if (bytesRead > 0) {
+                        String errorText = new String(buffer, 0, bytesRead);
+                        System.err.println("[stderr-raw] " + errorText);
+                        errorBuffer.append(errorText);
+                    }
+                } catch (Exception e) {
+                    // Ignore - stream may already be closed
+                }
+            }
             
             if (exitCode != 0) {
                 System.err.println("\n=== Process exited with code: " + exitCode + " ===");
