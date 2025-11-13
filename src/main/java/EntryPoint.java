@@ -651,16 +651,17 @@ public class EntryPoint {
             }
             
             // Build and execute Java command based on network
-            // Get heap size from environment variable, or auto-detect from system memory
+            // Auto-detect optimal heap size from system memory (default behavior)
+            // JAVA_HEAP_SIZE environment variable can override auto-detection if needed
             String heapSizeStr = getEnv("JAVA_HEAP_SIZE");
-            // Initialize with default value to satisfy compiler
-            int heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
+            int heapSizeGB;
             boolean heapSizeSet = false;
             
+            // Check if JAVA_HEAP_SIZE is explicitly set (allows manual override)
             if (heapSizeStr != null && !heapSizeStr.isEmpty()) {
                 try {
                     heapSizeGB = Integer.parseInt(heapSizeStr);
-                    System.out.println("Using JAVA_HEAP_SIZE from environment: " + heapSizeGB + "GB");
+                    System.out.println("Using JAVA_HEAP_SIZE from environment: " + heapSizeGB + "GB (override)");
                     heapSizeSet = true;
                 } catch (NumberFormatException e) {
                     System.err.println("Invalid JAVA_HEAP_SIZE: " + heapSizeStr + ", auto-detecting from system memory");
@@ -668,7 +669,7 @@ public class EntryPoint {
                 }
             }
             
-            // Auto-detect heap size from system memory if not explicitly set
+            // Auto-detect optimal heap size from system memory (default behavior)
             if (!heapSizeSet) {
                 // Re-detect system memory if needed (in case it wasn't detected earlier)
                 if (systemMemoryGB <= 0) {
@@ -678,16 +679,17 @@ public class EntryPoint {
                     int calculatedHeap = calculateOptimalHeapSize(systemMemoryGB, network);
                     if (calculatedHeap > 0) {
                         heapSizeGB = calculatedHeap;
-                        System.out.println("Auto-calculated heap size: " + heapSizeGB + "GB (75% of " + systemMemoryGB + "GB system memory)");
+                        System.out.println("Auto-detected optimal heap size: " + heapSizeGB + "GB (75% of " + systemMemoryGB + "GB system memory)");
                     } else {
-                        // Fall back to defaults
+                        // Fall back to network-specific defaults
                         heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
-                        System.out.println("Could not calculate optimal heap size, using default: " + heapSizeGB + "GB");
+                        System.out.println("Could not calculate optimal heap size, using network default: " + heapSizeGB + "GB");
                     }
                 } else {
-                    // Could not detect system memory, use defaults
+                    // Could not detect system memory, use network-specific defaults
                     heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
-                    System.out.println("Could not detect system memory, using default: " + heapSizeGB + "GB");
+                    System.out.println("Could not detect system memory, using network default: " + heapSizeGB + "GB");
+                    System.out.println("Note: Set JAVA_HEAP_SIZE environment variable to override if needed");
                 }
             }
             
