@@ -1,7 +1,6 @@
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
-import java.security.MessageDigest;
 
 public class EntryPoint {
     // Default configuration values
@@ -65,6 +64,83 @@ public class EntryPoint {
     
     private static String getEnv(String name) {
         return System.getenv(name);
+    }
+    
+    /**
+     * Detect available system memory in GB.
+     * Tries Docker memory limit first, then /proc/meminfo.
+     * Returns -1 if detection fails.
+     */
+    private static long detectSystemMemoryGB() {
+        try {
+            // First, check Docker memory limit (more accurate in containers)
+            Path dockerMemLimit = Paths.get("/sys/fs/cgroup/memory/memory.limit_in_bytes");
+            if (Files.exists(dockerMemLimit)) {
+                String memLimitStr = new String(Files.readAllBytes(dockerMemLimit)).trim();
+                try {
+                    long memLimitBytes = Long.parseLong(memLimitStr);
+                    if (memLimitBytes > 0 && memLimitBytes < Long.MAX_VALUE) {
+                        long memLimitGB = memLimitBytes / 1024 / 1024 / 1024;
+                        if (memLimitGB > 0) {
+                            System.out.println("Detected Docker memory limit: " + memLimitGB + "GB");
+                            return memLimitGB;
+                        }
+                    }
+                } catch (NumberFormatException e) {
+                    // Continue to try /proc/meminfo
+                }
+            }
+            
+            // Fall back to /proc/meminfo for system memory
+            Path memInfo = Paths.get("/proc/meminfo");
+            if (Files.exists(memInfo)) {
+                List<String> memLines = Files.readAllLines(memInfo);
+                for (String line : memLines) {
+                    if (line.startsWith("MemTotal:")) {
+                        String[] parts = line.split("\\s+");
+                        if (parts.length >= 2) {
+                            try {
+                                long memTotalKB = Long.parseLong(parts[1]);
+                                long memTotalGB = memTotalKB / 1024 / 1024;
+                                if (memTotalGB > 0) {
+                                    System.out.println("Detected system total memory: " + memTotalGB + "GB");
+                                    return memTotalGB;
+                                }
+                            } catch (NumberFormatException e) {
+                                // Ignore
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Could not detect system memory: " + e.getMessage());
+        }
+        return -1;
+    }
+    
+    /**
+     * Calculate optimal heap size based on available system memory.
+     * Uses 75% of available memory, leaving 25% for OS and other processes.
+     * Returns calculated heap size in GB, or -1 if calculation fails.
+     */
+    private static int calculateOptimalHeapSize(long systemMemoryGB, String network) {
+        if (systemMemoryGB <= 0) {
+            return -1;
+        }
+        
+        // Use 75% of available memory for heap
+        int calculatedHeapGB = (int) (systemMemoryGB * 0.75);
+        
+        // Apply network-specific minimums
+        int minHeapGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 8 : 4;
+        if (calculatedHeapGB < minHeapGB) {
+            System.out.println("Warning: Calculated heap size (" + calculatedHeapGB + "GB) is below minimum (" + minHeapGB + "GB), using minimum");
+            return minHeapGB;
+        }
+        
+        return calculatedHeapGB;
     }
     
     public static void main(String[] args) {
@@ -210,9 +286,7 @@ public class EntryPoint {
                 System.exit(1);
             }
             
-            System.out.println("Reading config file: " + configFile);
             String content = new String(Files.readAllBytes(configPath));
-            System.out.println("Config file size: " + content.length() + " bytes");
             
             // Regex replacements (like sed -i)
             content = content.replaceAll("listen\\.port = .*", "listen.port = " + configP2pPort);
@@ -242,12 +316,6 @@ public class EntryPoint {
             }
             
             Files.write(configPath, content.getBytes());
-            System.out.println("Config file updated successfully");
-            
-            // Print config file content before running
-            System.out.println("\n=== Config file content ===");
-            System.out.println(content);
-            System.out.println("=== End of config file ===\n");
             
             // Validate JAR file exists
             Path jarPath = Paths.get("/usr/local/tron/FullNode.jar");
@@ -255,30 +323,41 @@ public class EntryPoint {
                 System.err.println("ERROR: FullNode.jar does not exist: /usr/local/tron/FullNode.jar");
                 System.exit(1);
             }
-            System.out.println("FullNode.jar found: " + Files.size(jarPath) + " bytes");
-            
-            // Calculate and print MD5 hash
-            try {
-                String md5Hash = calculateMD5(jarPath);
-                System.out.println("FullNode.jar MD5: " + md5Hash);
-            } catch (IOException e) {
-                System.err.println("WARNING: Failed to calculate MD5 hash: " + e.getMessage());
-            }
             
             // Build and execute Java command based on network
-            // Get heap size from environment variable, with defaults
+            // Get heap size from environment variable, or auto-detect from system memory
             String heapSizeStr = getEnv("JAVA_HEAP_SIZE");
             int heapSizeGB;
+            boolean heapSizeSet = false;
+            
             if (heapSizeStr != null && !heapSizeStr.isEmpty()) {
                 try {
                     heapSizeGB = Integer.parseInt(heapSizeStr);
+                    System.out.println("Using JAVA_HEAP_SIZE from environment: " + heapSizeGB + "GB");
+                    heapSizeSet = true;
                 } catch (NumberFormatException e) {
-                    System.err.println("Invalid JAVA_HEAP_SIZE: " + heapSizeStr + ", using default");
-                    heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
+                    System.err.println("Invalid JAVA_HEAP_SIZE: " + heapSizeStr + ", auto-detecting from system memory");
+                    heapSizeSet = false; // Force auto-detection
                 }
-            } else {
-                // Default: 48GB for mainnet (64GB system), 8GB for nile
-                heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
+            }
+            
+            // Auto-detect heap size from system memory if not explicitly set
+            if (!heapSizeSet) {
+                long systemMemoryGB = detectSystemMemoryGB();
+                if (systemMemoryGB > 0) {
+                    heapSizeGB = calculateOptimalHeapSize(systemMemoryGB, network);
+                    if (heapSizeGB > 0) {
+                        System.out.println("Auto-calculated heap size: " + heapSizeGB + "GB (75% of " + systemMemoryGB + "GB system memory)");
+                    } else {
+                        // Fall back to defaults
+                        heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
+                        System.out.println("Could not calculate optimal heap size, using default: " + heapSizeGB + "GB");
+                    }
+                } else {
+                    // Could not detect system memory, use defaults
+                    heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
+                    System.out.println("Could not detect system memory, using default: " + heapSizeGB + "GB");
+                }
             }
             
             // Get CPU count for GC thread optimization
@@ -377,7 +456,7 @@ public class EntryPoint {
             // Warn if heap size is very large
             if (heapSizeGB > 32) {
                 System.out.println("WARNING: Large heap size (" + heapSizeGB + "GB) may cause startup issues.");
-                System.out.println("If the process fails to start, try reducing JAVA_HEAP_SIZE (e.g., 32 or 40)");
+                System.out.println("If the process fails to start, try setting JAVA_HEAP_SIZE environment variable to a lower value (e.g., 32 or 40)");
             }
             
             // Check available memory (rough estimate)
@@ -602,29 +681,6 @@ public class EntryPoint {
             // Ignore
         }
         return -1;
-    }
-    
-    // Helper method to calculate MD5 hash of a file
-    private static String calculateMD5(Path filePath) throws IOException {
-        try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            try (InputStream is = Files.newInputStream(filePath);
-                 BufferedInputStream bis = new BufferedInputStream(is)) {
-                byte[] buffer = new byte[8192];
-                int bytesRead;
-                while ((bytesRead = bis.read(buffer)) != -1) {
-                    md.update(buffer, 0, bytesRead);
-                }
-            }
-            byte[] hashBytes = md.digest();
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hashBytes) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new IOException("MD5 algorithm not available", e);
-        }
     }
 }
 
