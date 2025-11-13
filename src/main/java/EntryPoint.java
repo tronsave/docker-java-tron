@@ -482,8 +482,9 @@ public class EntryPoint {
             String solidityBlockTriggerStr = String.valueOf(configSolidityBlockTriggerEnabled);
             String solidityEventTriggerStr = String.valueOf(configSolidityEventTriggerEnabled);
             String solidityLogTriggerStr = String.valueOf(configSolidityLogTriggerEnabled);
-            String rpcFullNodeStr = String.valueOf(rpcFullNode);
-            String rpcSolidityNodeStr = String.valueOf(rpcSolidityNode);
+            // Reuse rpcFullNodeStr and rpcSolidityNodeStr - convert final values to strings
+            rpcFullNodeStr = String.valueOf(rpcFullNode);
+            rpcSolidityNodeStr = String.valueOf(rpcSolidityNode);
             String fullNodePortStr = String.valueOf(configFullNodePort);
             String rpcThreadCountStr = String.valueOf(rpcThreadCount);
             String rpcMaxConcurrentCallsStr = String.valueOf(rpcMaxConcurrentCalls);
