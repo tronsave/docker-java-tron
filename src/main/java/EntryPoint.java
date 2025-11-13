@@ -244,6 +244,11 @@ public class EntryPoint {
             Files.write(configPath, content.getBytes());
             System.out.println("Config file updated successfully");
             
+            // Print config file content before running
+            System.out.println("\n=== Config file content ===");
+            System.out.println(content);
+            System.out.println("=== End of config file ===\n");
+            
             // Validate JAR file exists
             Path jarPath = Paths.get("/usr/local/tron/FullNode.jar");
             if (!Files.exists(jarPath)) {
@@ -384,7 +389,8 @@ public class EntryPoint {
             
             // Execute the command
             ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectErrorStream(true); // Merge stderr into stdout
+            // Don't redirect error stream - capture both separately to see JVM errors
+            pb.redirectErrorStream(false);
             
             // Set working directory
             pb.directory(new File("/data"));
@@ -393,11 +399,12 @@ public class EntryPoint {
             System.out.println("Process started, PID: " + getProcessId(process));
             System.out.flush();
             
-            // Use a StringBuilder to collect all output
+            // Use StringBuilders to collect both stdout and stderr
             StringBuilder outputBuffer = new StringBuilder();
+            StringBuilder errorBuffer = new StringBuilder();
             final boolean[] processEnded = {false};
             
-            // Stream output in real-time to see what's happening
+            // Stream stdout in real-time
             Thread outputThread = new Thread(() -> {
                 try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(process.getInputStream()))) {
@@ -418,33 +425,74 @@ public class EntryPoint {
                     }
                 } catch (IOException e) {
                     if (!processEnded[0]) {
-                        System.err.println("Error reading process output: " + e.getMessage());
+                        System.err.println("Error reading process stdout: " + e.getMessage());
                         e.printStackTrace();
                     }
                 }
             });
             outputThread.start();
             
+            // Stream stderr in real-time (important for JVM startup errors)
+            Thread errorThread = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getErrorStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null || !processEnded[0]) {
+                        if (line != null) {
+                            System.err.println("[stderr] " + line);
+                            System.err.flush();
+                            errorBuffer.append(line).append("\n");
+                        } else {
+                            // No more lines, but process might still be running
+                            try {
+                                Thread.sleep(100);
+                            } catch (InterruptedException e) {
+                                break;
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    if (!processEnded[0]) {
+                        System.err.println("Error reading process stderr: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                }
+            });
+            errorThread.start();
+            
             // Wait for process with a small delay to catch immediate failures
             int exitCode = process.waitFor();
             processEnded[0] = true;
             
-            // Give output thread a moment to finish reading
+            // Give output threads a moment to finish reading
             outputThread.join(2000);
+            errorThread.join(2000);
             
             if (exitCode != 0) {
                 System.err.println("\n=== Process exited with code: " + exitCode + " ===");
-                if (outputBuffer.length() == 0) {
-                    System.err.println("No output captured from process.");
+                if (errorBuffer.length() > 0) {
+                    System.err.println("\n=== Error output (stderr) ===");
+                    System.err.println(errorBuffer.toString());
+                    System.err.println("=== End of error output ===");
+                }
+                if (outputBuffer.length() > 0) {
+                    System.err.println("\n=== Standard output (stdout) ===");
+                    System.err.println(outputBuffer.toString());
+                    System.err.println("=== End of standard output ===");
+                }
+                if (outputBuffer.length() == 0 && errorBuffer.length() == 0) {
+                    System.err.println("No output captured from process (neither stdout nor stderr).");
                     System.err.println("This usually means:");
                     System.err.println("  1. JVM failed to start (check memory allocation)");
                     System.err.println("  2. Config file has errors");
                     System.err.println("  3. JAR file is corrupted");
                     System.err.println("\nTrying to allocate " + heapSizeGB + "GB heap.");
                     System.err.println("Available CPUs: " + cpuCount);
-                } else {
-                    System.err.println("Process output:");
-                    System.err.println(outputBuffer.toString());
+                    System.err.println("EntryPoint JVM max memory: " + (maxMemory / 1024 / 1024 / 1024) + "GB");
+                    System.err.println("\nTroubleshooting:");
+                    System.err.println("  - Check if system has enough memory for " + heapSizeGB + "GB heap");
+                    System.err.println("  - Try reducing JAVA_HEAP_SIZE environment variable");
+                    System.err.println("  - Check Docker container memory limits if running in Docker");
                 }
                 System.err.flush();
             }
