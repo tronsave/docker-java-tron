@@ -719,24 +719,36 @@ public class EntryPoint {
                 // Tiered compilation with more aggressive optimizations for multi-core systems
                 compilerOpts = " -XX:+TieredCompilation " +
                               "-XX:TieredStopAtLevel=4 " +
-                              "-XX:CompileThreshold=10000 " +
-                              "-XX:+UseCompressedOops " +
-                              "-XX:+UseCompressedClassPointers";
+                              "-XX:CompileThreshold=10000";
             } else {
-                compilerOpts = " -XX:+TieredCompilation " +
-                              "-XX:+UseCompressedOops " +
-                              "-XX:+UseCompressedClassPointers";
+                compilerOpts = " -XX:+TieredCompilation";
+            }
+            
+            // Compressed OOPs: Only enable for heaps <= 32GB
+            // For heaps > 32GB, compressed OOPs are automatically disabled by JVM
+            // Explicitly disable to avoid warnings
+            if (heapSizeGB <= 32) {
+                compilerOpts += " -XX:+UseCompressedOops -XX:+UseCompressedClassPointers";
+            } else {
+                // Explicitly disable compressed OOPs for large heaps to avoid warnings
+                compilerOpts += " -XX:-UseCompressedOops -XX:-UseCompressedClassPointers";
             }
             
             // Add performance optimizations for large memory systems
+            // Note: Large pages require system configuration and can cause shared memory errors
+            // Only enable if system is properly configured (we'll disable by default to avoid errors)
             String performanceOpts = "";
-            if (heapSizeGB >= 32) {
+            if (heapSizeGB >= 16) {
                 // Enable aggressive optimizations for large heaps
-                performanceOpts = " -XX:+AggressiveOpts " +
-                                 "-XX:+UseLargePages " +
-                                 "-XX:LargePageSizeInBytes=2m";
-            } else if (heapSizeGB >= 16) {
                 performanceOpts = " -XX:+AggressiveOpts";
+                // Large pages are disabled by default to avoid shared memory reservation errors
+                // To enable large pages, the system must be configured with:
+                // echo 20000 > /proc/sys/vm/nr_hugepages
+                // And proper permissions must be set
+                // Uncomment the following lines if large pages are properly configured:
+                // if (heapSizeGB >= 32) {
+                //     performanceOpts += " -XX:+UseLargePages -XX:LargePageSizeInBytes=2m";
+                // }
             }
             
             String javaOpts = javaOptsCommon + 
