@@ -288,14 +288,24 @@ public class EntryPoint {
             
             String content = new String(Files.readAllBytes(configPath));
             
-            // Regex replacements (like sed -i)
-            content = content.replaceAll("listen\\.port = .*", "listen.port = " + configP2pPort);
-            content = content.replaceAll("fullNodePort = .*", "fullNodePort = " + configFullNodePort);
-            if (configSolidityNodePort != null) {
-                content = content.replaceAll("solidityPort = .*", "solidityPort = " + configSolidityNodePort);
+            // Check if config file uses placeholders (for mainnet/nile configs)
+            boolean usesPlaceholders = content.contains("{FULL_NODE_PORT}") || 
+                                      content.contains("{SOLIDITY_NODE_PORT}") ||
+                                      content.contains("{RPC_FULL_NODE}") ||
+                                      content.contains("{RPC_SOLIDITY_NODE}") ||
+                                      content.contains("{VM_MAX_TIME_RATIO_PLACEHOLDER}");
+            
+            // Regex replacements (like sed -i) - only if placeholders are not used
+            // This is for backward compatibility with configs that don't use placeholders
+            if (!usesPlaceholders) {
+                content = content.replaceAll("listen\\.port = .*", "listen.port = " + configP2pPort);
+                content = content.replaceAll("fullNodePort = .*", "fullNodePort = " + configFullNodePort);
+                if (configSolidityNodePort != null) {
+                    content = content.replaceAll("solidityPort = .*", "solidityPort = " + configSolidityNodePort);
+                }
             }
             
-            // Placeholder replacements
+            // Placeholder replacements (for mainnet/nile configs with placeholders)
             content = content.replace("{VM_MAX_TIME_RATIO_PLACEHOLDER}", String.valueOf(configVmMaxTimeRatio));
             content = content.replace("{PLUGIN_PATH_PLACEHOLDER}", configEventPluginPath);
             content = content.replace("{KAFKA_SERVER_PLACEHOLDER}", configEventPluginKafkaServer);
@@ -313,6 +323,11 @@ public class EntryPoint {
             content = content.replace("{FULL_NODE_PORT}", String.valueOf(configFullNodePort));
             if (configSolidityNodePort != null) {
                 content = content.replace("{SOLIDITY_NODE_PORT}", configSolidityNodePort);
+            }
+            
+            // If placeholders were used, also update listen.port (which doesn't have a placeholder)
+            if (usesPlaceholders) {
+                content = content.replaceAll("listen\\.port = .*", "listen.port = " + configP2pPort);
             }
             
             Files.write(configPath, content.getBytes());
