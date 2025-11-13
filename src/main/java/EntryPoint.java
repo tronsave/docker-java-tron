@@ -229,13 +229,13 @@ public class EntryPoint {
             Files.write(configPath, content.getBytes());
             
             // Build and execute Java command based on network
-            String javaOptsCommon = "-XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2G -XX:MaxDirectMemorySize=2G -XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:CMSInitiatingOccupancyFraction=70";
+            String javaOptsCommon = "-XX:ReservedCodeCacheSize=256m -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2G -XX:MaxDirectMemorySize=2G -XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseConcMarkSweepGC -XX:NewRatio=2 -XX:+CMSScavengeBeforeRemark -XX:+ParallelRefProcEnabled -XX:+UseCMSInitiatingOccupancyOnly -XX:CMSInitiatingOccupancyFraction=70 -XX:-UseNUMA";
             
             String javaOpts;
             if (network == null || network.isEmpty() || "mainnet".equals(network)) {
-                javaOpts = javaOptsCommon + " -Xms16G -Xmx16G -XX:+UseNUMA -XX:+AlwaysPreTouch";
+                javaOpts = javaOptsCommon + " -Xms16G -Xmx16G -XX:+AlwaysPreTouch";
             } else {
-                javaOpts = javaOptsCommon + " -Xms8G -Xmx8G -XX:-UseNUMA -XX:-AlwaysPreTouch";
+                javaOpts = javaOptsCommon + " -Xms8G -Xmx8G -XX:-AlwaysPreTouch";
             }
             
             // Build command
@@ -276,4 +276,3 @@ public class EntryPoint {
         }
     }
 }
-
