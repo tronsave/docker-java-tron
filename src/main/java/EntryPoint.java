@@ -321,8 +321,14 @@ public class EntryPoint {
             content = content.replace("{RPC_FULL_NODE}", String.valueOf(rpcFullNode));
             content = content.replace("{RPC_SOLIDITY_NODE}", String.valueOf(rpcSolidityNode));
             content = content.replace("{FULL_NODE_PORT}", String.valueOf(configFullNodePort));
+            
+            // Handle SOLIDITY_NODE_PORT placeholder
             if (configSolidityNodePort != null) {
                 content = content.replace("{SOLIDITY_NODE_PORT}", configSolidityNodePort);
+            } else {
+                // If solidityNodePort is null, remove the entire solidityPort line to avoid leaving placeholder
+                // This matches the pattern: "    solidityPort = {SOLIDITY_NODE_PORT}" followed by newline
+                content = content.replaceAll("\\s+solidityPort\\s*=\\s*\\{SOLIDITY_NODE_PORT\\}\\s*\\r?\\n", "");
             }
             
             // If placeholders were used, also update listen.port (which doesn't have a placeholder)
