@@ -460,7 +460,11 @@ public class EntryPoint {
                 System.exit(1);
             }
             
-            String content = new String(Files.readAllBytes(configPath));
+            // Read config file efficiently with explicit charset
+            byte[] configBytes = Files.readAllBytes(configPath);
+            StringBuilder contentBuilder = new StringBuilder(configBytes.length + 1024); // Pre-allocate with extra capacity
+            contentBuilder.append(new String(configBytes, java.nio.charset.StandardCharsets.UTF_8));
+            String content = contentBuilder.toString();
             
             // Check if config file uses placeholders (for mainnet/nile configs)
             boolean usesPlaceholders = content.contains("{FULL_NODE_PORT}") || 
@@ -468,6 +472,37 @@ public class EntryPoint {
                                       content.contains("{RPC_FULL_NODE}") ||
                                       content.contains("{RPC_SOLIDITY_NODE}") ||
                                       content.contains("{VM_MAX_TIME_RATIO_PLACEHOLDER}");
+            
+            // Pre-compute all string values once to avoid repeated conversions
+            String vmMaxTimeRatioStr = String.valueOf(configVmMaxTimeRatio);
+            String blockTriggerStr = String.valueOf(configBlockTriggerEnabled);
+            String transactionTriggerStr = String.valueOf(configTransactionTriggerEnabled);
+            String contracteventTriggerStr = String.valueOf(configContracteventTriggerEnabled);
+            String contractlogTriggerStr = String.valueOf(configContractlogTriggerEnabled);
+            String solidityBlockTriggerStr = String.valueOf(configSolidityBlockTriggerEnabled);
+            String solidityEventTriggerStr = String.valueOf(configSolidityEventTriggerEnabled);
+            String solidityLogTriggerStr = String.valueOf(configSolidityLogTriggerEnabled);
+            String rpcFullNodeStr = String.valueOf(rpcFullNode);
+            String rpcSolidityNodeStr = String.valueOf(rpcSolidityNode);
+            String fullNodePortStr = String.valueOf(configFullNodePort);
+            String rpcThreadCountStr = String.valueOf(rpcThreadCount);
+            String rpcMaxConcurrentCallsStr = String.valueOf(rpcMaxConcurrentCalls);
+            String rpcFlowControlWindowStr = String.valueOf(rpcFlowControlWindow);
+            String rpcMaxMessageSizeStr = String.valueOf(rpcMaxMessageSize);
+            String rpcMaxHeaderListSizeStr = String.valueOf(rpcMaxHeaderListSize);
+            String maxConnectionsStr = String.valueOf(maxConnections);
+            String maxConnectionsWithSameIpStr = String.valueOf(maxConnectionsWithSameIp);
+            String maxHttpConnectionsStr = String.valueOf(maxHttpConnections);
+            String maxOpenFilesStr = String.valueOf(maxOpenFiles);
+            String maxOpenFilesMStr = String.valueOf(maxOpenFilesM);
+            String maxOpenFilesLStr = String.valueOf(maxOpenFilesL);
+            String storageWriteBufferSizeStr = String.valueOf(storageWriteBufferSize);
+            String storageCacheSizeStr = String.valueOf(storageCacheSize);
+            String dbCompactThreadsStr = String.valueOf(dbCompactThreads);
+            String dbMaxBytesForLevelBaseStr = String.valueOf(dbMaxBytesForLevelBase);
+            String dbTargetFileSizeBaseStr = String.valueOf(dbTargetFileSizeBase);
+            String globalQpsStr = String.valueOf(globalQps);
+            String globalIpQpsStr = String.valueOf(globalIpQps);
             
             // Regex replacements (like sed -i) - only if placeholders are not used
             // This is for backward compatibility with configs that don't use placeholders
@@ -477,60 +512,135 @@ public class EntryPoint {
                 if (configSolidityNodePort != null) {
                     content = content.replaceAll("solidityPort = .*", "solidityPort = " + configSolidityNodePort);
                 }
+                contentBuilder = new StringBuilder(content);
             }
             
-            // Placeholder replacements (for mainnet/nile configs with placeholders)
-            content = content.replace("{VM_MAX_TIME_RATIO_PLACEHOLDER}", String.valueOf(configVmMaxTimeRatio));
-            content = content.replace("{PLUGIN_PATH_PLACEHOLDER}", configEventPluginPath);
-            content = content.replace("{KAFKA_SERVER_PLACEHOLDER}", configEventPluginKafkaServer);
-            content = content.replace("{BLOCK_TRIGGER_PLACEHOLDER}", String.valueOf(configBlockTriggerEnabled));
-            content = content.replace("{TRANSACTION_TRIGGER_PLACEHOLDER}", String.valueOf(configTransactionTriggerEnabled));
-            content = content.replace("{CONTRACTEVENT_TRIGGER_PLACEHOLDER}", String.valueOf(configContracteventTriggerEnabled));
-            content = content.replace("{CONTRACTLOG_TRIGGER_PLACEHOLDER}", String.valueOf(configContractlogTriggerEnabled));
-            content = content.replace("{SOLIDITY_BLOCK_TRIGGER_PLACEHOLDER}", String.valueOf(configSolidityBlockTriggerEnabled));
-            content = content.replace("{SOLIDITY_EVENT_TRIGGER_PLACEHOLDER}", String.valueOf(configSolidityEventTriggerEnabled));
-            content = content.replace("{SOLIDITY_LOG_TRIGGER_PLACEHOLDER}", String.valueOf(configSolidityLogTriggerEnabled));
-            content = content.replace("{CONTRACT_ADDRESS_FILTER_PLACEHOLDER}", configContractAddressFilter);
-            content = content.replace("{CONTRACT_TOPIC_FILTER_PLACEHOLDER}", configContractTopicFilter);
-            content = content.replace("{RPC_FULL_NODE}", String.valueOf(rpcFullNode));
-            content = content.replace("{RPC_SOLIDITY_NODE}", String.valueOf(rpcSolidityNode));
-            content = content.replace("{FULL_NODE_PORT}", String.valueOf(configFullNodePort));
+            // Efficient placeholder replacements using StringBuilder for better performance
+            // Replace all placeholders in a single pass through the content
+            int index;
+            while ((index = contentBuilder.indexOf("{VM_MAX_TIME_RATIO_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{VM_MAX_TIME_RATIO_PLACEHOLDER}".length(), vmMaxTimeRatioStr);
+            }
+            while ((index = contentBuilder.indexOf("{PLUGIN_PATH_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{PLUGIN_PATH_PLACEHOLDER}".length(), configEventPluginPath);
+            }
+            while ((index = contentBuilder.indexOf("{KAFKA_SERVER_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{KAFKA_SERVER_PLACEHOLDER}".length(), configEventPluginKafkaServer);
+            }
+            while ((index = contentBuilder.indexOf("{BLOCK_TRIGGER_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{BLOCK_TRIGGER_PLACEHOLDER}".length(), blockTriggerStr);
+            }
+            while ((index = contentBuilder.indexOf("{TRANSACTION_TRIGGER_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{TRANSACTION_TRIGGER_PLACEHOLDER}".length(), transactionTriggerStr);
+            }
+            while ((index = contentBuilder.indexOf("{CONTRACTEVENT_TRIGGER_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{CONTRACTEVENT_TRIGGER_PLACEHOLDER}".length(), contracteventTriggerStr);
+            }
+            while ((index = contentBuilder.indexOf("{CONTRACTLOG_TRIGGER_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{CONTRACTLOG_TRIGGER_PLACEHOLDER}".length(), contractlogTriggerStr);
+            }
+            while ((index = contentBuilder.indexOf("{SOLIDITY_BLOCK_TRIGGER_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{SOLIDITY_BLOCK_TRIGGER_PLACEHOLDER}".length(), solidityBlockTriggerStr);
+            }
+            while ((index = contentBuilder.indexOf("{SOLIDITY_EVENT_TRIGGER_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{SOLIDITY_EVENT_TRIGGER_PLACEHOLDER}".length(), solidityEventTriggerStr);
+            }
+            while ((index = contentBuilder.indexOf("{SOLIDITY_LOG_TRIGGER_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{SOLIDITY_LOG_TRIGGER_PLACEHOLDER}".length(), solidityLogTriggerStr);
+            }
+            while ((index = contentBuilder.indexOf("{CONTRACT_ADDRESS_FILTER_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{CONTRACT_ADDRESS_FILTER_PLACEHOLDER}".length(), configContractAddressFilter);
+            }
+            while ((index = contentBuilder.indexOf("{CONTRACT_TOPIC_FILTER_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{CONTRACT_TOPIC_FILTER_PLACEHOLDER}".length(), configContractTopicFilter);
+            }
+            while ((index = contentBuilder.indexOf("{RPC_FULL_NODE}")) >= 0) {
+                contentBuilder.replace(index, index + "{RPC_FULL_NODE}".length(), rpcFullNodeStr);
+            }
+            while ((index = contentBuilder.indexOf("{RPC_SOLIDITY_NODE}")) >= 0) {
+                contentBuilder.replace(index, index + "{RPC_SOLIDITY_NODE}".length(), rpcSolidityNodeStr);
+            }
+            while ((index = contentBuilder.indexOf("{FULL_NODE_PORT}")) >= 0) {
+                contentBuilder.replace(index, index + "{FULL_NODE_PORT}".length(), fullNodePortStr);
+            }
             
             // Dynamic configuration placeholder replacements
-            content = content.replace("{RPC_THREAD_COUNT}", String.valueOf(rpcThreadCount));
-            content = content.replace("{RPC_MAX_CONCURRENT_CALLS}", String.valueOf(rpcMaxConcurrentCalls));
-            content = content.replace("{RPC_FLOW_CONTROL_WINDOW}", String.valueOf(rpcFlowControlWindow));
-            content = content.replace("{RPC_MAX_MESSAGE_SIZE}", String.valueOf(rpcMaxMessageSize));
-            content = content.replace("{RPC_MAX_HEADER_LIST_SIZE}", String.valueOf(rpcMaxHeaderListSize));
-            content = content.replace("{MAX_CONNECTIONS}", String.valueOf(maxConnections));
-            content = content.replace("{MAX_CONNECTIONS_WITH_SAME_IP}", String.valueOf(maxConnectionsWithSameIp));
-            content = content.replace("{MAX_HTTP_CONNECT_NUMBER}", String.valueOf(maxHttpConnections));
-            content = content.replace("{STORAGE_MAX_OPEN_FILES}", String.valueOf(maxOpenFiles));
-            content = content.replace("{STORAGE_MAX_OPEN_FILES_M}", String.valueOf(maxOpenFilesM));
-            content = content.replace("{STORAGE_MAX_OPEN_FILES_L}", String.valueOf(maxOpenFilesL));
-            content = content.replace("{STORAGE_WRITE_BUFFER_SIZE}", String.valueOf(storageWriteBufferSize));
-            content = content.replace("{STORAGE_CACHE_SIZE}", String.valueOf(storageCacheSize));
-            content = content.replace("{DB_COMPACT_THREADS}", String.valueOf(dbCompactThreads));
-            content = content.replace("{DB_MAX_BYTES_FOR_LEVEL_BASE}", String.valueOf(dbMaxBytesForLevelBase));
-            content = content.replace("{DB_TARGET_FILE_SIZE_BASE}", String.valueOf(dbTargetFileSizeBase));
-            content = content.replace("{GLOBAL_QPS}", String.valueOf(globalQps));
-            content = content.replace("{GLOBAL_IP_QPS}", String.valueOf(globalIpQps));
+            while ((index = contentBuilder.indexOf("{RPC_THREAD_COUNT}")) >= 0) {
+                contentBuilder.replace(index, index + "{RPC_THREAD_COUNT}".length(), rpcThreadCountStr);
+            }
+            while ((index = contentBuilder.indexOf("{RPC_MAX_CONCURRENT_CALLS}")) >= 0) {
+                contentBuilder.replace(index, index + "{RPC_MAX_CONCURRENT_CALLS}".length(), rpcMaxConcurrentCallsStr);
+            }
+            while ((index = contentBuilder.indexOf("{RPC_FLOW_CONTROL_WINDOW}")) >= 0) {
+                contentBuilder.replace(index, index + "{RPC_FLOW_CONTROL_WINDOW}".length(), rpcFlowControlWindowStr);
+            }
+            while ((index = contentBuilder.indexOf("{RPC_MAX_MESSAGE_SIZE}")) >= 0) {
+                contentBuilder.replace(index, index + "{RPC_MAX_MESSAGE_SIZE}".length(), rpcMaxMessageSizeStr);
+            }
+            while ((index = contentBuilder.indexOf("{RPC_MAX_HEADER_LIST_SIZE}")) >= 0) {
+                contentBuilder.replace(index, index + "{RPC_MAX_HEADER_LIST_SIZE}".length(), rpcMaxHeaderListSizeStr);
+            }
+            while ((index = contentBuilder.indexOf("{MAX_CONNECTIONS}")) >= 0) {
+                contentBuilder.replace(index, index + "{MAX_CONNECTIONS}".length(), maxConnectionsStr);
+            }
+            while ((index = contentBuilder.indexOf("{MAX_CONNECTIONS_WITH_SAME_IP}")) >= 0) {
+                contentBuilder.replace(index, index + "{MAX_CONNECTIONS_WITH_SAME_IP}".length(), maxConnectionsWithSameIpStr);
+            }
+            while ((index = contentBuilder.indexOf("{MAX_HTTP_CONNECT_NUMBER}")) >= 0) {
+                contentBuilder.replace(index, index + "{MAX_HTTP_CONNECT_NUMBER}".length(), maxHttpConnectionsStr);
+            }
+            while ((index = contentBuilder.indexOf("{STORAGE_MAX_OPEN_FILES}")) >= 0) {
+                contentBuilder.replace(index, index + "{STORAGE_MAX_OPEN_FILES}".length(), maxOpenFilesStr);
+            }
+            while ((index = contentBuilder.indexOf("{STORAGE_MAX_OPEN_FILES_M}")) >= 0) {
+                contentBuilder.replace(index, index + "{STORAGE_MAX_OPEN_FILES_M}".length(), maxOpenFilesMStr);
+            }
+            while ((index = contentBuilder.indexOf("{STORAGE_MAX_OPEN_FILES_L}")) >= 0) {
+                contentBuilder.replace(index, index + "{STORAGE_MAX_OPEN_FILES_L}".length(), maxOpenFilesLStr);
+            }
+            while ((index = contentBuilder.indexOf("{STORAGE_WRITE_BUFFER_SIZE}")) >= 0) {
+                contentBuilder.replace(index, index + "{STORAGE_WRITE_BUFFER_SIZE}".length(), storageWriteBufferSizeStr);
+            }
+            while ((index = contentBuilder.indexOf("{STORAGE_CACHE_SIZE}")) >= 0) {
+                contentBuilder.replace(index, index + "{STORAGE_CACHE_SIZE}".length(), storageCacheSizeStr);
+            }
+            while ((index = contentBuilder.indexOf("{DB_COMPACT_THREADS}")) >= 0) {
+                contentBuilder.replace(index, index + "{DB_COMPACT_THREADS}".length(), dbCompactThreadsStr);
+            }
+            while ((index = contentBuilder.indexOf("{DB_MAX_BYTES_FOR_LEVEL_BASE}")) >= 0) {
+                contentBuilder.replace(index, index + "{DB_MAX_BYTES_FOR_LEVEL_BASE}".length(), dbMaxBytesForLevelBaseStr);
+            }
+            while ((index = contentBuilder.indexOf("{DB_TARGET_FILE_SIZE_BASE}")) >= 0) {
+                contentBuilder.replace(index, index + "{DB_TARGET_FILE_SIZE_BASE}".length(), dbTargetFileSizeBaseStr);
+            }
+            while ((index = contentBuilder.indexOf("{GLOBAL_QPS}")) >= 0) {
+                contentBuilder.replace(index, index + "{GLOBAL_QPS}".length(), globalQpsStr);
+            }
+            while ((index = contentBuilder.indexOf("{GLOBAL_IP_QPS}")) >= 0) {
+                contentBuilder.replace(index, index + "{GLOBAL_IP_QPS}".length(), globalIpQpsStr);
+            }
             
             // Handle SOLIDITY_NODE_PORT placeholder
             if (configSolidityNodePort != null) {
-                content = content.replace("{SOLIDITY_NODE_PORT}", configSolidityNodePort);
+                while ((index = contentBuilder.indexOf("{SOLIDITY_NODE_PORT}")) >= 0) {
+                    contentBuilder.replace(index, index + "{SOLIDITY_NODE_PORT}".length(), configSolidityNodePort);
+                }
             } else {
                 // If solidityNodePort is null, remove the entire solidityPort line to avoid leaving placeholder
-                // This matches the pattern: "    solidityPort = {SOLIDITY_NODE_PORT}" followed by newline
+                content = contentBuilder.toString();
                 content = content.replaceAll("\\s+solidityPort\\s*=\\s*\\{SOLIDITY_NODE_PORT\\}\\s*\\r?\\n", "");
+                contentBuilder = new StringBuilder(content);
             }
             
             // If placeholders were used, also update listen.port (which doesn't have a placeholder)
             if (usesPlaceholders) {
+                content = contentBuilder.toString();
                 content = content.replaceAll("listen\\.port = .*", "listen.port = " + configP2pPort);
+                contentBuilder = new StringBuilder(content);
             }
             
-            Files.write(configPath, content.getBytes());
+            // Write config file efficiently with explicit charset
+            Files.write(configPath, contentBuilder.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
             
             // Validate JAR file exists
             Path jarPath = Paths.get("/usr/local/tron/FullNode.jar");
@@ -758,15 +868,33 @@ public class EntryPoint {
                 compilerOpts +
                 performanceOpts;
             
-            // Build command
-            List<String> command = new ArrayList<>();
+            // Build command efficiently - pre-allocate ArrayList with estimated capacity
+            // Estimate: java + ~30 JVM options + jar + 4 args + optional flags = ~40
+            List<String> command = new ArrayList<>(40);
             command.add("java");
-            // Split javaOpts and add each as separate argument
-            for (String opt : javaOpts.split("\\s+")) {
-                if (!opt.isEmpty()) {
-                    command.add(opt);
+            
+            // Split javaOpts efficiently - avoid regex overhead by using manual parsing
+            // This is faster than split("\\s+") for large option strings
+            int start = 0;
+            int len = javaOpts.length();
+            for (int i = 0; i < len; i++) {
+                char c = javaOpts.charAt(i);
+                if (Character.isWhitespace(c)) {
+                    if (i > start) {
+                        command.add(javaOpts.substring(start, i));
+                    }
+                    // Skip consecutive whitespace
+                    while (i + 1 < len && Character.isWhitespace(javaOpts.charAt(i + 1))) {
+                        i++;
+                    }
+                    start = i + 1;
                 }
             }
+            // Add last token if any
+            if (start < len) {
+                command.add(javaOpts.substring(start));
+            }
+            
             command.add("-jar");
             command.add("/usr/local/tron/FullNode.jar");
             command.add("-c");
@@ -868,26 +996,32 @@ public class EntryPoint {
             System.out.println("Process started, PID: " + getProcessId(process));
             System.out.flush();
             
-            // Use StringBuilders to collect both stdout and stderr
-            StringBuilder outputBuffer = new StringBuilder();
-            StringBuilder errorBuffer = new StringBuilder();
+            // Use StringBuilders with initial capacity for better performance
+            // Pre-allocate buffers to reduce reallocation overhead
+            StringBuilder outputBuffer = new StringBuilder(8192);
+            StringBuilder errorBuffer = new StringBuilder(4096);
             final boolean[] processEnded = {false};
             
-            // Stream stdout in real-time
+            // Stream stdout in real-time with optimized buffering
             Thread outputThread = new Thread(() -> {
                 try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(process.getInputStream()))) {
+                        new InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8), 8192)) {
                     String line;
                     while ((line = reader.readLine()) != null || !processEnded[0]) {
                         if (line != null) {
                             System.out.println(line);
                             System.out.flush();
-                            outputBuffer.append(line).append("\n");
+                            // Pre-allocate capacity to reduce reallocations
+                            if (outputBuffer.length() + line.length() + 1 > outputBuffer.capacity()) {
+                                outputBuffer.ensureCapacity(outputBuffer.length() + line.length() + 1024);
+                            }
+                            outputBuffer.append(line).append('\n');
                         } else {
                             // No more lines, but process might still be running
                             try {
                                 Thread.sleep(100);
                             } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
                                 break;
                             }
                         }
@@ -899,23 +1033,29 @@ public class EntryPoint {
                     }
                 }
             });
+            outputThread.setDaemon(true); // Don't prevent JVM shutdown
             outputThread.start();
             
-            // Stream stderr in real-time (important for JVM startup errors)
+            // Stream stderr in real-time (important for JVM startup errors) with optimized buffering
             Thread errorThread = new Thread(() -> {
                 try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(process.getErrorStream()))) {
+                        new InputStreamReader(process.getErrorStream(), java.nio.charset.StandardCharsets.UTF_8), 4096)) {
                     String line;
                     while ((line = reader.readLine()) != null || !processEnded[0]) {
                         if (line != null) {
                             System.err.println("[stderr] " + line);
                             System.err.flush();
-                            errorBuffer.append(line).append("\n");
+                            // Pre-allocate capacity to reduce reallocations
+                            if (errorBuffer.length() + line.length() + 1 > errorBuffer.capacity()) {
+                                errorBuffer.ensureCapacity(errorBuffer.length() + line.length() + 512);
+                            }
+                            errorBuffer.append(line).append('\n');
                         } else {
                             // No more lines, but process might still be running
                             try {
                                 Thread.sleep(100);
                             } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
                                 break;
                             }
                         }
@@ -927,6 +1067,7 @@ public class EntryPoint {
                     }
                 }
             });
+            errorThread.setDaemon(true); // Don't prevent JVM shutdown
             errorThread.start();
             
             // Give threads a moment to start reading before checking process status
