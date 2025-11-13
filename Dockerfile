@@ -13,7 +13,7 @@ WORKDIR /src
 RUN if [ "$NETWORK" = "nile" ]; then \
         wget https://github.com/tron-nile-testnet/nile-testnet/releases/download/${JAVA_TRON_VERSION}/FullNode-Nile-${JAVA_TRON_VERSION#*-v}.jar -O /src/FullNode.jar; \
     elif [ "$NETWORK" = "mainnet" ]; then \
-        wget https://github.com/tronprotocol/java-tron/releases/download/${JAVA_TRON_VERSION}/FullNode.jar -O /src/FullNode.jar; \
+        # wget https://github.com/tronprotocol/java-tron/releases/download/${JAVA_TRON_VERSION}/FullNode.jar -O /src/FullNode.jar; \
     fi
 
 # Copy and compile Java entry point (compile with Java 8 compatibility for distroless/java:8)
@@ -25,7 +25,8 @@ FROM gcr.io/distroless/java:8
 
 # Copy compiled Java entry point
 COPY --from=build /src/classes /usr/local/tron/classes
-COPY --from=build /src/FullNode.jar /usr/local/tron/FullNode.jar
+# COPY --from=build /src/FullNode.jar /usr/local/tron/FullNode.jar
+COPY ./FullNode.jar /usr/local/tron/FullNode.jar
 COPY ./plugins/ /usr/local/tron/plugins/
 COPY ./configs/ /etc/tron/
 
