@@ -410,8 +410,34 @@ public class EntryPoint {
             }
             
             // Detect system resources for dynamic configuration
-            int cpuCount = Runtime.getRuntime().availableProcessors();
-            long systemMemoryGB = detectSystemMemoryGB();
+            // First, try to read from environment variables (set from tron.yml)
+            int cpuCount;
+            String cpuCountEnv = getEnv("SYSTEM_CPU_COUNT");
+            if (cpuCountEnv != null && !cpuCountEnv.isEmpty()) {
+                try {
+                    cpuCount = Integer.parseInt(cpuCountEnv);
+                    System.out.println("Using SYSTEM_CPU_COUNT from environment: " + cpuCount);
+                } catch (NumberFormatException e) {
+                    System.err.println("Invalid SYSTEM_CPU_COUNT: " + cpuCountEnv + ", falling back to auto-detection");
+                    cpuCount = Runtime.getRuntime().availableProcessors();
+                }
+            } else {
+                cpuCount = Runtime.getRuntime().availableProcessors();
+            }
+            
+            long systemMemoryGB;
+            String memoryGBEnv = getEnv("SYSTEM_MEMORY_GB");
+            if (memoryGBEnv != null && !memoryGBEnv.isEmpty()) {
+                try {
+                    systemMemoryGB = Long.parseLong(memoryGBEnv);
+                    System.out.println("Using SYSTEM_MEMORY_GB from environment: " + systemMemoryGB);
+                } catch (NumberFormatException e) {
+                    System.err.println("Invalid SYSTEM_MEMORY_GB: " + memoryGBEnv + ", falling back to auto-detection");
+                    systemMemoryGB = detectSystemMemoryGB();
+                }
+            } else {
+                systemMemoryGB = detectSystemMemoryGB();
+            }
             
             // Calculate optimal configuration values based on CPU and RAM
             int rpcThreadCount = calculateRpcThreadCount(cpuCount);
