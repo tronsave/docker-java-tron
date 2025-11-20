@@ -1033,13 +1033,18 @@ public class EntryPoint {
             System.out.println("Process started, PID: " + getProcessId(process));
             System.out.flush();
             
-            // Use StringBuilders with initial capacity for better performance
-            // Pre-allocate buffers to reduce reallocation overhead
-            StringBuilder outputBuffer = new StringBuilder(8192);
-            StringBuilder errorBuffer = new StringBuilder(4096);
+            // Use size-limited buffers to prevent EntryPoint OOM errors
+            // Only keep last 1MB of output and 512KB of errors for error reporting
+            // Since we're already streaming to stdout/stderr, we don't need full history
+            final int MAX_OUTPUT_BUFFER_SIZE = 1024 * 1024; // 1MB
+            final int MAX_ERROR_BUFFER_SIZE = 512 * 1024;   // 512KB
+            final java.util.List<String> outputLines = new java.util.ArrayList<>(1000);
+            final java.util.List<String> errorLines = new java.util.ArrayList<>(500);
+            final int[] outputBufferSize = {0};
+            final int[] errorBufferSize = {0};
             final boolean[] processEnded = {false};
             
-            // Stream stdout in real-time with optimized buffering
+            // Stream stdout in real-time with size-limited buffering
             Thread outputThread = new Thread(() -> {
                 try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8), 8192)) {
@@ -1048,11 +1053,26 @@ public class EntryPoint {
                         if (line != null) {
                             System.out.println(line);
                             System.out.flush();
-                            // Pre-allocate capacity to reduce reallocations
-                            if (outputBuffer.length() + line.length() + 1 > outputBuffer.capacity()) {
-                                outputBuffer.ensureCapacity(outputBuffer.length() + line.length() + 1024);
+                            // Only buffer for error reporting (size-limited circular buffer)
+                            try {
+                                int lineSize = line.length() + 1; // +1 for newline
+                                synchronized (outputLines) {
+                                    outputLines.add(line);
+                                    outputBufferSize[0] += lineSize;
+                                    // Remove oldest lines if buffer exceeds limit
+                                    while (outputBufferSize[0] > MAX_OUTPUT_BUFFER_SIZE && !outputLines.isEmpty()) {
+                                        String removed = outputLines.remove(0);
+                                        outputBufferSize[0] -= (removed.length() + 1);
+                                    }
+                                }
+                            } catch (OutOfMemoryError e) {
+                                // If buffer OOM, clear it and continue streaming
+                                System.err.println("WARNING: EntryPoint output buffer OOM, clearing buffer. Output will still be streamed.");
+                                synchronized (outputLines) {
+                                    outputLines.clear();
+                                    outputBufferSize[0] = 0;
+                                }
                             }
-                            outputBuffer.append(line).append('\n');
                         } else {
                             // No more lines, but process might still be running
                             try {
@@ -1062,6 +1082,13 @@ public class EntryPoint {
                                 break;
                             }
                         }
+                    }
+                } catch (OutOfMemoryError e) {
+                    // If we still get OOM, disable buffering completely
+                    System.err.println("WARNING: EntryPoint buffer OOM, disabling output buffering. Output will still be streamed.");
+                    synchronized (outputLines) {
+                        outputLines.clear();
+                        outputBufferSize[0] = 0;
                     }
                 } catch (IOException e) {
                     if (!processEnded[0]) {
@@ -1073,7 +1100,7 @@ public class EntryPoint {
             outputThread.setDaemon(true); // Don't prevent JVM shutdown
             outputThread.start();
             
-            // Stream stderr in real-time (important for JVM startup errors) with optimized buffering
+            // Stream stderr in real-time with size-limited buffering
             Thread errorThread = new Thread(() -> {
                 try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(process.getErrorStream(), java.nio.charset.StandardCharsets.UTF_8), 4096)) {
@@ -1082,11 +1109,26 @@ public class EntryPoint {
                         if (line != null) {
                             System.err.println("[stderr] " + line);
                             System.err.flush();
-                            // Pre-allocate capacity to reduce reallocations
-                            if (errorBuffer.length() + line.length() + 1 > errorBuffer.capacity()) {
-                                errorBuffer.ensureCapacity(errorBuffer.length() + line.length() + 512);
+                            // Only buffer for error reporting (size-limited circular buffer)
+                            try {
+                                int lineSize = line.length() + 1; // +1 for newline
+                                synchronized (errorLines) {
+                                    errorLines.add(line);
+                                    errorBufferSize[0] += lineSize;
+                                    // Remove oldest lines if buffer exceeds limit
+                                    while (errorBufferSize[0] > MAX_ERROR_BUFFER_SIZE && !errorLines.isEmpty()) {
+                                        String removed = errorLines.remove(0);
+                                        errorBufferSize[0] -= (removed.length() + 1);
+                                    }
+                                }
+                            } catch (OutOfMemoryError e) {
+                                // If buffer OOM, clear it and continue streaming
+                                System.err.println("WARNING: EntryPoint error buffer OOM, clearing buffer. Errors will still be streamed.");
+                                synchronized (errorLines) {
+                                    errorLines.clear();
+                                    errorBufferSize[0] = 0;
+                                }
                             }
-                            errorBuffer.append(line).append('\n');
                         } else {
                             // No more lines, but process might still be running
                             try {
@@ -1096,6 +1138,13 @@ public class EntryPoint {
                                 break;
                             }
                         }
+                    }
+                } catch (OutOfMemoryError e) {
+                    // If we still get OOM, disable buffering completely
+                    System.err.println("WARNING: EntryPoint buffer OOM, disabling error buffering. Errors will still be streamed.");
+                    synchronized (errorLines) {
+                        errorLines.clear();
+                        errorBufferSize[0] = 0;
                     }
                 } catch (IOException e) {
                     if (!processEnded[0]) {
@@ -1137,7 +1186,7 @@ public class EntryPoint {
             errorThread.join(joinTimeout);
             
             // Try to read any remaining bytes from stderr if process exited quickly
-            if (exitedImmediately && errorBuffer.length() == 0) {
+            if (exitedImmediately && errorLines.isEmpty()) {
                 try {
                     // Try reading raw bytes from error stream
                     InputStream errorStream = process.getErrorStream();
@@ -1146,7 +1195,9 @@ public class EntryPoint {
                     if (bytesRead > 0) {
                         String errorText = new String(buffer, 0, bytesRead);
                         System.err.println("[stderr-raw] " + errorText);
-                        errorBuffer.append(errorText);
+                        synchronized (errorLines) {
+                            errorLines.add(errorText);
+                        }
                     }
                 } catch (Exception e) {
                     // Ignore - stream may already be closed
@@ -1155,17 +1206,25 @@ public class EntryPoint {
             
             if (exitCode != 0) {
                 System.err.println("\n=== Process exited with code: " + exitCode + " ===");
-                if (errorBuffer.length() > 0) {
-                    System.err.println("\n=== Error output (stderr) ===");
-                    System.err.println(errorBuffer.toString());
-                    System.err.println("=== End of error output ===");
+                synchronized (errorLines) {
+                    if (!errorLines.isEmpty()) {
+                        System.err.println("\n=== Error output (stderr) - last " + errorLines.size() + " lines ===");
+                        for (String line : errorLines) {
+                            System.err.println(line);
+                        }
+                        System.err.println("=== End of error output ===");
+                    }
                 }
-                if (outputBuffer.length() > 0) {
-                    System.err.println("\n=== Standard output (stdout) ===");
-                    System.err.println(outputBuffer.toString());
-                    System.err.println("=== End of standard output ===");
+                synchronized (outputLines) {
+                    if (!outputLines.isEmpty()) {
+                        System.err.println("\n=== Standard output (stdout) - last " + outputLines.size() + " lines ===");
+                        for (String line : outputLines) {
+                            System.err.println(line);
+                        }
+                        System.err.println("=== End of standard output ===");
+                    }
                 }
-                if (outputBuffer.length() == 0 && errorBuffer.length() == 0) {
+                if (outputLines.isEmpty() && errorLines.isEmpty()) {
                     System.err.println("No output captured from process (neither stdout nor stderr).");
                     System.err.println("This usually means:");
                     System.err.println("  1. JVM failed to start (check memory allocation)");
