@@ -122,7 +122,7 @@ public class EntryPoint {
     
     /**
      * Calculate optimal heap size based on available system memory.
-     * Uses 75% of available memory, leaving 25% for OS and other processes.
+     * Uses 60% of available memory (reduced from 75% to prevent OOM), leaving 40% for OS and other processes.
      * Returns calculated heap size in GB, or -1 if calculation fails.
      */
     private static int calculateOptimalHeapSize(long systemMemoryGB, String network) {
@@ -130,14 +130,22 @@ public class EntryPoint {
             return -1;
         }
         
-        // Use 75% of available memory for heap
-        int calculatedHeapGB = (int) (systemMemoryGB * 0.75);
+        // Use 60% of available memory for heap (more conservative to prevent OOM)
+        int calculatedHeapGB = (int) (systemMemoryGB * 0.60);
         
         // Apply network-specific minimums
         int minHeapGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 8 : 4;
         if (calculatedHeapGB < minHeapGB) {
             System.out.println("Warning: Calculated heap size (" + calculatedHeapGB + "GB) is below minimum (" + minHeapGB + "GB), using minimum");
             return minHeapGB;
+        }
+        
+        // Apply maximum heap size limit to prevent excessive memory usage
+        // Maximum 32GB for mainnet, 16GB for nile to prevent OOM errors
+        int maxHeapGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 32 : 16;
+        if (calculatedHeapGB > maxHeapGB) {
+            System.out.println("Warning: Calculated heap size (" + calculatedHeapGB + "GB) exceeds maximum (" + maxHeapGB + "GB), capping at maximum to prevent OOM");
+            return maxHeapGB;
         }
         
         return calculatedHeapGB;
@@ -681,7 +689,8 @@ public class EntryPoint {
             // JAVA_HEAP_SIZE environment variable can override auto-detection if needed
             String heapSizeStr = getEnv("JAVA_HEAP_SIZE");
             // Initialize with network-specific default to ensure variable is always initialized
-            int heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 48 : 8;
+            // Reduced defaults to prevent OOM: 32GB for mainnet (was 48GB), 8GB for nile
+            int heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 32 : 8;
             boolean heapSizeSet = false;
             
             // Check if JAVA_HEAP_SIZE is explicitly set (allows manual override)
@@ -706,7 +715,7 @@ public class EntryPoint {
                     int calculatedHeap = calculateOptimalHeapSize(systemMemoryGB, network);
                     if (calculatedHeap > 0) {
                         heapSizeGB = calculatedHeap;
-                        System.out.println("Auto-detected optimal heap size: " + heapSizeGB + "GB (75% of " + systemMemoryGB + "GB system memory)");
+                        System.out.println("Auto-detected optimal heap size: " + heapSizeGB + "GB (60% of " + systemMemoryGB + "GB system memory, capped to prevent OOM)");
                     } else {
                         // Fall back to network-specific defaults (already set above)
                         System.out.println("Could not calculate optimal heap size, using network default: " + heapSizeGB + "GB");
@@ -953,10 +962,10 @@ public class EntryPoint {
             System.out.println("  Metaspace: " + metaspaceSize + " (max: " + maxMetaspaceSize + ")");
             System.out.println("  Direct Memory: " + maxDirectMemorySize);
             
-            // Warn if heap size is very large
-            if (heapSizeGB > 32) {
-                System.out.println("WARNING: Large heap size (" + heapSizeGB + "GB) may cause startup issues.");
-                System.out.println("If the process fails to start, try setting JAVA_HEAP_SIZE environment variable to a lower value (e.g., 32 or 40)");
+            // Warn if heap size is very large (though now capped at 32GB for mainnet)
+            if (heapSizeGB > 24) {
+                System.out.println("INFO: Heap size set to " + heapSizeGB + "GB. This should be safe, but monitor for OutOfMemoryError.");
+                System.out.println("If you experience OOM errors, try setting JAVA_HEAP_SIZE environment variable to a lower value (e.g., 16, 20, or 24)");
             }
             
             // Check available memory (rough estimate)
