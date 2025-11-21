@@ -122,7 +122,7 @@ public class EntryPoint {
     
     /**
      * Calculate optimal heap size based on available system memory.
-     * Uses 50% of available memory to leave room for other Docker containers and OS.
+     * Optimized to use 80% of Docker memory limit for better performance.
      * Returns calculated heap size in GB, or -1 if calculation fails.
      */
     private static int calculateOptimalHeapSize(long systemMemoryGB, String network) {
@@ -130,9 +130,9 @@ public class EntryPoint {
             return -1;
         }
         
-        // Use 50% of available memory for heap (conservative to allow other containers to run safely)
-        // This leaves 50% for OS, other containers, and system buffers
-        int calculatedHeapGB = (int) (systemMemoryGB * 0.50);
+        // Use 80% of available memory for heap (optimized for dedicated containers)
+        // This leaves 20% for OS, JVM overhead, and system buffers
+        int calculatedHeapGB = (int) (systemMemoryGB * 0.80);
         
         // Apply network-specific minimums
         int minHeapGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 8 : 4;
@@ -141,11 +141,11 @@ public class EntryPoint {
             return minHeapGB;
         }
         
-        // Apply maximum heap size limit to prevent excessive memory usage
-        // Reduced to 24GB for mainnet, 12GB for nile to ensure safe operation with other containers
-        int maxHeapGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 24 : 12;
+        // Apply maximum heap size limit optimized for 50GB Docker containers
+        // For 50GB limit: 80% = 40GB heap, leaving 10GB for off-heap (optimal)
+        int maxHeapGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 40 : 16;
         if (calculatedHeapGB > maxHeapGB) {
-            System.out.println("Warning: Calculated heap size (" + calculatedHeapGB + "GB) exceeds maximum (" + maxHeapGB + "GB), capping at maximum to prevent OOM and allow other containers to run");
+            System.out.println("Warning: Calculated heap size (" + calculatedHeapGB + "GB) exceeds maximum (" + maxHeapGB + "GB), capping at maximum for optimal performance");
             return maxHeapGB;
         }
         
@@ -192,39 +192,43 @@ public class EntryPoint {
     
     /**
      * Calculate optimal storage cache size based on available RAM.
-     * Reduced cache sizes to allow other containers to run safely.
+     * Optimized cache sizes for better database performance.
      */
     private static long calculateStorageCacheSize(long systemMemoryGB) {
         if (systemMemoryGB <= 0) {
-            return 268435456L; // Default 256MB (reduced from 512MB)
+            return 536870912L; // Default 512MB
         }
-        // Reduced cache sizes to minimize memory footprint
+        // Optimized cache sizes for better LevelDB performance
         if (systemMemoryGB >= 64) {
-            return 536870912L; // 512MB for 64GB+ systems (reduced from 2GB)
+            return 2147483648L; // 2GB for 64GB+ systems
+        } else if (systemMemoryGB >= 50) {
+            return 1073741824L; // 1GB for 50GB+ systems (optimized for 50GB containers)
         } else if (systemMemoryGB >= 32) {
-            return 268435456L; // 256MB for 32GB+ systems (reduced from 1GB)
+            return 536870912L; // 512MB for 32GB+ systems
         } else if (systemMemoryGB >= 16) {
-            return 134217728L; // 128MB for 16GB+ systems (reduced from 512MB)
+            return 268435456L; // 256MB for 16GB+ systems
         } else {
-            return 67108864L; // 64MB for smaller systems (reduced from 256MB)
+            return 134217728L; // 128MB for smaller systems
         }
     }
     
     /**
      * Calculate optimal storage write buffer size based on RAM.
-     * Reduced buffer sizes to minimize memory footprint.
+     * Optimized buffer sizes for better write performance.
      */
     private static long calculateStorageWriteBufferSize(long systemMemoryGB) {
         if (systemMemoryGB <= 0) {
-            return 33554432L; // Default 32MB (reduced from 64MB)
+            return 67108864L; // Default 64MB
         }
-        // Reduced write buffer sizes to save memory
+        // Optimized write buffer sizes for better performance
         if (systemMemoryGB >= 64) {
-            return 67108864L; // 64MB (reduced from 128MB)
+            return 134217728L; // 128MB
+        } else if (systemMemoryGB >= 50) {
+            return 134217728L; // 128MB for 50GB+ containers
         } else if (systemMemoryGB >= 32) {
-            return 33554432L; // 32MB (reduced from 64MB)
+            return 67108864L; // 64MB
         } else {
-            return 16777216L; // 16MB (reduced from 32MB)
+            return 33554432L; // 32MB
         }
     }
     
@@ -691,8 +695,8 @@ public class EntryPoint {
             // JAVA_HEAP_SIZE environment variable can override auto-detection if needed
             String heapSizeStr = getEnv("JAVA_HEAP_SIZE");
             // Initialize with network-specific default to ensure variable is always initialized
-            // Reduced defaults for safe operation with other containers: 24GB for mainnet, 8GB for nile
-            int heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 24 : 8;
+            // Optimized defaults for 50GB containers: 36GB for mainnet, 8GB for nile
+            int heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 36 : 8;
             boolean heapSizeSet = false;
             
             // Check if JAVA_HEAP_SIZE is explicitly set (allows manual override)
@@ -717,7 +721,7 @@ public class EntryPoint {
                     int calculatedHeap = calculateOptimalHeapSize(systemMemoryGB, network);
                     if (calculatedHeap > 0) {
                         heapSizeGB = calculatedHeap;
-                        System.out.println("Auto-detected optimal heap size: " + heapSizeGB + "GB (50% of " + systemMemoryGB + "GB system memory, capped to allow other containers to run safely)");
+                        System.out.println("Auto-detected optimal heap size: " + heapSizeGB + "GB (80% of " + systemMemoryGB + "GB system memory, optimized for performance)");
                     } else {
                         // Fall back to network-specific defaults (already set above)
                         System.out.println("Could not calculate optimal heap size, using network default: " + heapSizeGB + "GB");
@@ -746,30 +750,34 @@ public class EntryPoint {
             }
             
             // Calculate optimal metaspace size based on heap size
-            // Limited metaspace to reduce total memory footprint for safe operation with other containers
+            // Optimized metaspace for better performance with larger heaps
             String metaspaceSize;
             String maxMetaspaceSize;
-            if (heapSizeGB >= 24) {
-                metaspaceSize = "256m";
-                maxMetaspaceSize = "1G"; // Reduced from 4G to save memory
+            if (heapSizeGB >= 36) {
+                metaspaceSize = "512m";
+                maxMetaspaceSize = "2G"; // Optimized for large heaps
+            } else if (heapSizeGB >= 24) {
+                metaspaceSize = "512m";
+                maxMetaspaceSize = "1.5G";
             } else if (heapSizeGB >= 16) {
                 metaspaceSize = "256m";
-                maxMetaspaceSize = "512m"; // Reduced from 2G
+                maxMetaspaceSize = "1G";
             } else {
-                metaspaceSize = "128m";
-                maxMetaspaceSize = "256m"; // Reduced from 1G
+                metaspaceSize = "256m";
+                maxMetaspaceSize = "512m";
             }
             
             // Calculate optimal direct memory size based on heap
-            // Direct memory is used for NIO operations, but limited to reduce total memory footprint
-            // Reduced values to allow other containers to run safely
+            // Direct memory is used for NIO operations, optimized for better performance
             String maxDirectMemorySize;
-            if (heapSizeGB >= 24) {
-                maxDirectMemorySize = "2G"; // Reduced from 6G to save memory
+            if (heapSizeGB >= 36) {
+                maxDirectMemorySize = "4G"; // Optimized for large heaps
+            } else if (heapSizeGB >= 24) {
+                maxDirectMemorySize = "3G";
             } else if (heapSizeGB >= 16) {
-                maxDirectMemorySize = "1G"; // Reduced from 4G
+                maxDirectMemorySize = "2G";
             } else {
-                maxDirectMemorySize = "512m"; // Reduced from 2G
+                maxDirectMemorySize = "1G";
             }
             
             // Use G1GC for heaps >= 8GB (better than CMS for modern JVMs)
@@ -781,8 +789,8 @@ public class EntryPoint {
                 String g1RegionSize;
                 if (heapSizeGB >= 64) {
                     g1RegionSize = "32m";
-                } else if (heapSizeGB >= 32) {
-                    g1RegionSize = "16m";
+                } else if (heapSizeGB >= 36) {
+                    g1RegionSize = "16m"; // Optimized for 36GB+ heaps
                 } else if (heapSizeGB >= 16) {
                     g1RegionSize = "8m";
                 } else {
