@@ -432,7 +432,17 @@ public class EntryPoint {
             String cpuCountEnv = getEnv("SYSTEM_CPU_COUNT");
             if (cpuCountEnv != null && !cpuCountEnv.isEmpty()) {
                 try {
-                    cpuCount = Integer.parseInt(cpuCountEnv);
+                    // Try parsing as integer first, then as double if that fails (handles "1.5" -> 2)
+                    try {
+                        cpuCount = Integer.parseInt(cpuCountEnv);
+                    } catch (NumberFormatException e) {
+                        // If integer parse fails, try double and round
+                        double cpuCountDouble = Double.parseDouble(cpuCountEnv);
+                        cpuCount = (int) Math.round(cpuCountDouble);
+                        if (cpuCount <= 0) {
+                            throw new NumberFormatException("CPU count must be positive");
+                        }
+                    }
                     System.out.println("Using SYSTEM_CPU_COUNT from environment: " + cpuCount);
                 } catch (NumberFormatException e) {
                     System.err.println("Invalid SYSTEM_CPU_COUNT: " + cpuCountEnv + ", falling back to auto-detection");
@@ -446,7 +456,17 @@ public class EntryPoint {
             String memoryGBEnv = getEnv("SYSTEM_MEMORY_GB");
             if (memoryGBEnv != null && !memoryGBEnv.isEmpty()) {
                 try {
-                    systemMemoryGB = Long.parseLong(memoryGBEnv);
+                    // Try parsing as long first, then as double if that fails (handles "1.5" -> 2)
+                    try {
+                        systemMemoryGB = Long.parseLong(memoryGBEnv);
+                    } catch (NumberFormatException e) {
+                        // If long parse fails, try double and round
+                        double memoryGBDouble = Double.parseDouble(memoryGBEnv);
+                        systemMemoryGB = Math.round(memoryGBDouble);
+                        if (systemMemoryGB <= 0) {
+                            throw new NumberFormatException("Memory must be positive");
+                        }
+                    }
                     System.out.println("Using SYSTEM_MEMORY_GB from environment: " + systemMemoryGB);
                 } catch (NumberFormatException e) {
                     System.err.println("Invalid SYSTEM_MEMORY_GB: " + memoryGBEnv + ", falling back to auto-detection");
