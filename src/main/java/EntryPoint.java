@@ -122,7 +122,7 @@ public class EntryPoint {
     
     /**
      * Calculate optimal heap size based on available system memory.
-     * Optimized to use 80% of Docker memory limit for better performance.
+     * Optimized to use 65% of Docker memory limit to leave room for off-heap memory.
      * Returns calculated heap size in GB, or -1 if calculation fails.
      */
     private static int calculateOptimalHeapSize(long systemMemoryGB, String network) {
@@ -130,9 +130,9 @@ public class EntryPoint {
             return -1;
         }
         
-        // Use 80% of available memory for heap (optimized for dedicated containers)
-        // This leaves 20% for OS, JVM overhead, and system buffers
-        int calculatedHeapGB = (int) (systemMemoryGB * 0.80);
+        // Use 65% of available memory for heap (reduced from 80% to prevent OOM)
+        // This leaves 35% for OS, JVM overhead, off-heap memory, and system buffers
+        int calculatedHeapGB = (int) (systemMemoryGB * 0.65);
         
         // Apply network-specific minimums
         int minHeapGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 8 : 4;
@@ -142,8 +142,8 @@ public class EntryPoint {
         }
         
         // Apply maximum heap size limit optimized for 50GB Docker containers
-        // For 50GB limit: 80% = 40GB heap, leaving 10GB for off-heap (optimal)
-        int maxHeapGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 40 : 16;
+        // For 50GB limit: 65% = 32.5GB heap, leaving 17.5GB for off-heap (more conservative)
+        int maxHeapGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 32 : 12;
         if (calculatedHeapGB > maxHeapGB) {
             System.out.println("Warning: Calculated heap size (" + calculatedHeapGB + "GB) exceeds maximum (" + maxHeapGB + "GB), capping at maximum for optimal performance");
             return maxHeapGB;
@@ -154,27 +154,27 @@ public class EntryPoint {
     
     /**
      * Calculate optimal RPC thread count based on CPU cores.
-     * Uses 2x CPU cores for high-performance RPC handling.
+     * Uses 1x CPU cores to reduce context switching and CPU overhead.
      */
     private static int calculateRpcThreadCount(int cpuCount) {
-        // Use 2x CPU cores for better RPC throughput, with reasonable limits
-        int threads = cpuCount * 2;
-        // Cap at 64 threads to avoid excessive context switching
-        return Math.min(threads, 64);
+        // Use 1x CPU cores to reduce context switching overhead
+        int threads = cpuCount;
+        // Cap at 32 threads to avoid excessive context switching
+        return Math.min(threads, 32);
     }
     
     /**
      * Calculate optimal max connections based on available RAM.
-     * More RAM allows for more concurrent connections.
+     * More RAM allows for more concurrent connections, but reduced to lower overhead.
      */
     private static int calculateMaxConnections(long systemMemoryGB) {
         if (systemMemoryGB <= 0) {
             return 100; // Default
         }
-        // Scale connections based on RAM: ~10 connections per GB, with reasonable limits
-        int connections = (int) (systemMemoryGB * 10);
-        // Minimum 100, maximum 2000
-        return Math.max(100, Math.min(connections, 2000));
+        // Scale connections based on RAM: ~5 connections per GB (reduced from 10)
+        int connections = (int) (systemMemoryGB * 5);
+        // Minimum 100, maximum 1000 (reduced from 2000)
+        return Math.max(100, Math.min(connections, 1000));
     }
     
     /**
@@ -184,10 +184,10 @@ public class EntryPoint {
         if (systemMemoryGB <= 0) {
             return 50; // Default
         }
-        // Scale HTTP connections: ~5 connections per GB, with reasonable limits
-        int connections = (int) (systemMemoryGB * 5);
-        // Minimum 50, maximum 1000
-        return Math.max(50, Math.min(connections, 1000));
+        // Scale HTTP connections: ~3 connections per GB (reduced from 5)
+        int connections = (int) (systemMemoryGB * 3);
+        // Minimum 50, maximum 500 (reduced from 1000)
+        return Math.max(50, Math.min(connections, 500));
     }
     
     /**
@@ -272,18 +272,21 @@ public class EntryPoint {
     
     /**
      * Calculate optimal global QPS based on CPU and RAM.
+     * Reduced to prevent excessive CPU usage.
      */
     private static int calculateGlobalQps(int cpuCount, long systemMemoryGB) {
-        // Base QPS on CPU: 5000 per core, with RAM multiplier
-        int baseQps = cpuCount * 5000;
-        // Scale with RAM: 1.5x for 64GB+, 1.2x for 32GB+
+        // Base QPS on CPU: 2000 per core (reduced from 5000 to lower CPU usage)
+        int baseQps = cpuCount * 2000;
+        // Scale with RAM: 1.3x for 64GB+, 1.2x for 32GB+ (reduced multipliers)
         double multiplier = 1.0;
         if (systemMemoryGB >= 64) {
-            multiplier = 2.0;
+            multiplier = 1.3;
         } else if (systemMemoryGB >= 32) {
-            multiplier = 1.5;
+            multiplier = 1.2;
         }
-        return (int) (baseQps * multiplier);
+        // Cap at 50000 to prevent excessive CPU usage
+        int qps = (int) (baseQps * multiplier);
+        return Math.min(qps, 50000);
     }
     
     /**
@@ -470,7 +473,7 @@ public class EntryPoint {
             int globalIpQps = calculateGlobalIpQps(globalQps);
             
             // RPC-specific calculations
-            int rpcMaxConcurrentCalls = Math.min(100, cpuCount * 8); // Scale with CPU, max 100
+            int rpcMaxConcurrentCalls = Math.min(50, cpuCount * 4); // Scale with CPU, max 50 (reduced from 100 and 8x)
             int rpcFlowControlWindow = systemMemoryGB >= 64 ? 2097152 : 1048576; // 2MB for 64GB+, 1MB otherwise
             int rpcMaxMessageSize = systemMemoryGB >= 64 ? 8388608 : 4194304; // 8MB for 64GB+, 4MB otherwise
             int rpcMaxHeaderListSize = systemMemoryGB >= 64 ? 16384 : 8192; // 16KB for 64GB+, 8KB otherwise
@@ -695,8 +698,8 @@ public class EntryPoint {
             // JAVA_HEAP_SIZE environment variable can override auto-detection if needed
             String heapSizeStr = getEnv("JAVA_HEAP_SIZE");
             // Initialize with network-specific default to ensure variable is always initialized
-            // Optimized defaults for 50GB containers: 36GB for mainnet, 8GB for nile
-            int heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 36 : 8;
+            // Optimized defaults for 50GB containers: 30GB for mainnet, 6GB for nile (reduced from 36GB/8GB)
+            int heapSizeGB = (network == null || network.isEmpty() || "mainnet".equals(network)) ? 30 : 6;
             boolean heapSizeSet = false;
             
             // Check if JAVA_HEAP_SIZE is explicitly set (allows manual override)
@@ -721,7 +724,7 @@ public class EntryPoint {
                     int calculatedHeap = calculateOptimalHeapSize(systemMemoryGB, network);
                     if (calculatedHeap > 0) {
                         heapSizeGB = calculatedHeap;
-                        System.out.println("Auto-detected optimal heap size: " + heapSizeGB + "GB (80% of " + systemMemoryGB + "GB system memory, optimized for performance)");
+                        System.out.println("Auto-detected optimal heap size: " + heapSizeGB + "GB (65% of " + systemMemoryGB + "GB system memory, optimized to prevent OOM)");
                     } else {
                         // Fall back to network-specific defaults (already set above)
                         System.out.println("Could not calculate optimal heap size, using network default: " + heapSizeGB + "GB");
@@ -789,8 +792,8 @@ public class EntryPoint {
                 String g1RegionSize;
                 if (heapSizeGB >= 64) {
                     g1RegionSize = "32m";
-                } else if (heapSizeGB >= 36) {
-                    g1RegionSize = "16m"; // Optimized for 36GB+ heaps
+                } else if (heapSizeGB >= 32) {
+                    g1RegionSize = "16m"; // Optimized for 32GB+ heaps
                 } else if (heapSizeGB >= 16) {
                     g1RegionSize = "8m";
                 } else {
@@ -798,12 +801,12 @@ public class EntryPoint {
                 }
                 
                 // Calculate optimal GC pause target based on heap size
-                // Larger heaps can tolerate slightly longer pauses
-                int maxGCPauseMillis = heapSizeGB >= 32 ? 300 : (heapSizeGB >= 16 ? 200 : 150);
+                // Reduced pause targets to improve responsiveness and reduce CPU spikes
+                int maxGCPauseMillis = heapSizeGB >= 32 ? 250 : (heapSizeGB >= 16 ? 150 : 100);
                 
                 // Calculate initiating heap occupancy percent
-                // Start GC earlier for larger heaps to avoid long pauses
-                int initiatingHeapOccupancyPercent = heapSizeGB >= 48 ? 40 : (heapSizeGB >= 32 ? 45 : 50);
+                // Start GC earlier to prevent memory pressure and reduce CPU spikes
+                int initiatingHeapOccupancyPercent = heapSizeGB >= 32 ? 40 : (heapSizeGB >= 16 ? 45 : 50);
                 
                 // G1GC optimized for large heaps and multiple CPUs (Java 8 compatible)
                 javaOptsCommon = String.format(
