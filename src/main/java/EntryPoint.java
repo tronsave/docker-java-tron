@@ -1002,12 +1002,34 @@ public class EntryPoint {
             System.out.println("  Direct Memory: " + maxDirectMemorySize);
             
             // Calculate total estimated memory usage
-            int directMemGB = maxDirectMemorySize.endsWith("G") ? 
-                Integer.parseInt(maxDirectMemorySize.replace("G", "")) : 
-                (maxDirectMemorySize.endsWith("m") ? Integer.parseInt(maxDirectMemorySize.replace("m", "")) / 1024 : 0);
-            int metaspaceGB = maxMetaspaceSize.endsWith("G") ? 
-                Integer.parseInt(maxMetaspaceSize.replace("G", "")) : 
-                (maxMetaspaceSize.endsWith("m") ? Integer.parseInt(maxMetaspaceSize.replace("m", "")) / 1024 : 0);
+            // Helper function to parse memory size strings (handles decimals like "1.5G")
+            int directMemGB = 0;
+            try {
+                if (maxDirectMemorySize.endsWith("G")) {
+                    String value = maxDirectMemorySize.replace("G", "");
+                    directMemGB = (int) Math.round(Double.parseDouble(value));
+                } else if (maxDirectMemorySize.endsWith("m")) {
+                    String value = maxDirectMemorySize.replace("m", "");
+                    directMemGB = (int) Math.round(Double.parseDouble(value)) / 1024;
+                }
+            } catch (NumberFormatException e) {
+                // If parsing fails, default to 0
+                directMemGB = 0;
+            }
+            
+            int metaspaceGB = 0;
+            try {
+                if (maxMetaspaceSize.endsWith("G")) {
+                    String value = maxMetaspaceSize.replace("G", "");
+                    metaspaceGB = (int) Math.round(Double.parseDouble(value));
+                } else if (maxMetaspaceSize.endsWith("m")) {
+                    String value = maxMetaspaceSize.replace("m", "");
+                    metaspaceGB = (int) Math.round(Double.parseDouble(value)) / 1024;
+                }
+            } catch (NumberFormatException e) {
+                // If parsing fails, default to 0
+                metaspaceGB = 0;
+            }
             int totalEstimatedGB = heapSizeGB + directMemGB + metaspaceGB;
             
             System.out.println("Memory Configuration Summary:");
