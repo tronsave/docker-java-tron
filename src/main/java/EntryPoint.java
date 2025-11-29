@@ -725,7 +725,17 @@ public class EntryPoint {
             // Check if JAVA_HEAP_SIZE is explicitly set (allows manual override)
             if (heapSizeStr != null && !heapSizeStr.isEmpty()) {
                 try {
-                    heapSizeGB = Integer.parseInt(heapSizeStr);
+                    // Try parsing as integer first, then as double if that fails (handles "1.5" -> 2)
+                    try {
+                        heapSizeGB = Integer.parseInt(heapSizeStr);
+                    } catch (NumberFormatException e) {
+                        // If integer parse fails, try double and round
+                        double heapSizeDouble = Double.parseDouble(heapSizeStr);
+                        heapSizeGB = (int) Math.round(heapSizeDouble);
+                        if (heapSizeGB <= 0) {
+                            throw new NumberFormatException("Heap size must be positive");
+                        }
+                    }
                     System.out.println("Using JAVA_HEAP_SIZE from environment: " + heapSizeGB + "GB (override)");
                     heapSizeSet = true;
                 } catch (NumberFormatException e) {
