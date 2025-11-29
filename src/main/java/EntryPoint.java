@@ -784,6 +784,7 @@ public class EntryPoint {
             
             // Calculate optimal metaspace size based on heap size
             // Optimized metaspace for better performance with larger heaps
+            // Note: JVM requires integer values for memory options (no decimals)
             String metaspaceSize;
             String maxMetaspaceSize;
             if (heapSizeGB >= 36) {
@@ -791,7 +792,7 @@ public class EntryPoint {
                 maxMetaspaceSize = "2G"; // Optimized for large heaps
             } else if (heapSizeGB >= 24) {
                 metaspaceSize = "512m";
-                maxMetaspaceSize = "1.5G";
+                maxMetaspaceSize = "1536m"; // 1.5G equivalent (JVM doesn't accept "1.5G")
             } else if (heapSizeGB >= 16) {
                 metaspaceSize = "256m";
                 maxMetaspaceSize = "1G";
