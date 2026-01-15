@@ -306,6 +306,13 @@ public class EntryPoint {
                 System.err.println("Invalid NETWORK: " + network + ". Must be one of: \"mainnet\", \"nile\"");
                 System.exit(1);
             }
+
+            // LITE_FULLNODE_SWITCH config, default "on", only accept "on" and "off"
+            String liteFullNodeSwitch = getEnv("LITE_FULLNODE_SWITCH", "on");
+            if (!"on".equals(liteFullNodeSwitch) && !"off".equals(liteFullNodeSwitch)) {
+                System.err.println("Invalid LITE_FULLNODE_SWITCH: " + liteFullNodeSwitch + ". Must be one of: \"on\", \"off\"");
+                System.exit(1);
+            }
             
             // Set config file based on network
             if ("nile".equals(network)) {
