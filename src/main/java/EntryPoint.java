@@ -634,7 +634,9 @@ public class EntryPoint {
             while ((index = contentBuilder.indexOf("{FULL_NODE_PORT}")) >= 0) {
                 contentBuilder.replace(index, index + "{FULL_NODE_PORT}".length(), fullNodePortStr);
             }
-            
+            while ((index = contentBuilder.indexOf("{LITE_FULLNODE_SWITCH}")) >= 0) {
+                contentBuilder.replace(index, index + "{LITE_FULLNODE_SWITCH}".length(), liteFullNodeSwitch);
+            }
             // Dynamic configuration placeholder replacements
             while ((index = contentBuilder.indexOf("{RPC_THREAD_COUNT}")) >= 0) {
                 contentBuilder.replace(index, index + "{RPC_THREAD_COUNT}".length(), rpcThreadCountStr);
