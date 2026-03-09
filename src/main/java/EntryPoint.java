@@ -332,6 +332,11 @@ public class EntryPoint {
             if (eventPluginEnabled != null && !eventPluginEnabled.isEmpty()) {
                 configEventPluginEnabled = Boolean.parseBoolean(eventPluginEnabled);
             }
+
+            // Validate and set Prometheus metrics (default: true)
+            String metricsEnabled = getEnv("METRICS_ENABLED", "true");
+            validateBoolean("METRICS_ENABLED", metricsEnabled);
+            boolean configMetricsEnabled = "true".equalsIgnoreCase(metricsEnabled);
             
             // Override ports and settings from environment variables
             String p2pPort = getEnv("P2P_PORT");
@@ -508,6 +513,7 @@ public class EntryPoint {
             System.out.println("System Resources Detected:");
             System.out.println("  CPU Cores: " + cpuCount);
             System.out.println("  System Memory: " + systemMemoryGB + "GB");
+            System.out.println("  Prometheus metrics: " + (configMetricsEnabled ? "enabled" : "disabled"));
             System.out.println("Dynamic Configuration Calculated:");
             System.out.println("  RPC Threads: " + rpcThreadCount);
             System.out.println("  Max Connections: " + maxConnections);
@@ -574,6 +580,7 @@ public class EntryPoint {
             String dbTargetFileSizeBaseStr = String.valueOf(dbTargetFileSizeBase);
             String globalQpsStr = String.valueOf(globalQps);
             String globalIpQpsStr = String.valueOf(globalIpQps);
+            String metricsEnabledStr = String.valueOf(configMetricsEnabled);
             
             // Regex replacements (like sed -i) - only if placeholders are not used
             // This is for backward compatibility with configs that don't use placeholders
@@ -691,6 +698,9 @@ public class EntryPoint {
             }
             while ((index = contentBuilder.indexOf("{GLOBAL_IP_QPS}")) >= 0) {
                 contentBuilder.replace(index, index + "{GLOBAL_IP_QPS}".length(), globalIpQpsStr);
+            }
+            while ((index = contentBuilder.indexOf("{METRICS_ENABLED_PLACEHOLDER}")) >= 0) {
+                contentBuilder.replace(index, index + "{METRICS_ENABLED_PLACEHOLDER}".length(), metricsEnabledStr);
             }
             
             // Handle SOLIDITY_NODE_PORT placeholder
@@ -823,77 +833,46 @@ public class EntryPoint {
                 maxDirectMemorySize = "1G";
             }
             
-            // Use G1GC for heaps >= 8GB (better than CMS for modern JVMs)
-            String javaOptsCommon;
-            if (heapSizeGB >= 8) {
-                // Calculate optimal G1GC region size based on heap
-                // Region size should be power of 2 between 1MB and 32MB
-                // For large heaps, use larger regions to reduce overhead
-                String g1RegionSize;
-                if (heapSizeGB >= 64) {
-                    g1RegionSize = "32m";
-                } else if (heapSizeGB >= 32) {
-                    g1RegionSize = "16m"; // Optimized for 32GB+ heaps
-                } else if (heapSizeGB >= 16) {
-                    g1RegionSize = "8m";
-                } else {
-                    g1RegionSize = "4m";
-                }
-                
-                // Calculate optimal GC pause target based on heap size
-                // Reduced pause targets to improve responsiveness and reduce CPU spikes
-                int maxGCPauseMillis = heapSizeGB >= 32 ? 250 : (heapSizeGB >= 16 ? 150 : 100);
-                
-                // Calculate initiating heap occupancy percent
-                // Start GC earlier to prevent memory pressure and reduce CPU spikes
-                int initiatingHeapOccupancyPercent = heapSizeGB >= 32 ? 40 : (heapSizeGB >= 16 ? 45 : 50);
-                
-                // G1GC optimized for large heaps and multiple CPUs (Java 8 compatible)
-                javaOptsCommon = String.format(
-                    "-XX:ReservedCodeCacheSize=%s " +
-                    "-XX:MetaspaceSize=%s " +
-                    "-XX:MaxMetaspaceSize=%s " +
-                    "-XX:MaxDirectMemorySize=%s " +
-                    "-XX:+HeapDumpOnOutOfMemoryError " +
-                    "-XX:HeapDumpPath=/data/heap_dump.hprof " +
-                    "-XX:+PrintGCDetails " +
-                    "-XX:+PrintGCDateStamps " +
-                    "-XX:+PrintGCApplicationStoppedTime " +
-                    "-Xloggc:/data/gc.log " +
-                    "-XX:+UseG1GC " +
-                    "-XX:MaxGCPauseMillis=%d " +
-                    "-XX:G1HeapRegionSize=%s " +
-                    "-XX:InitiatingHeapOccupancyPercent=%d " +
-                    "-XX:ConcGCThreads=%d " +
-                    "-XX:ParallelGCThreads=%d " +
-                    "-XX:+ParallelRefProcEnabled " +
-                    "-XX:+UseStringDeduplication " +
-                    "-XX:+DisableExplicitGC",
-                    codeCacheSize, metaspaceSize, maxMetaspaceSize, maxDirectMemorySize,
-                    maxGCPauseMillis, g1RegionSize, initiatingHeapOccupancyPercent,
-                    gcConcurrentThreads, gcParallelThreads
-                );
+            // G1GC for all heap sizes (Java 17: CMS removed; G1 is default and scales well)
+            // Region size: power of 2 between 1MB and 32MB
+            String g1RegionSize;
+            if (heapSizeGB >= 64) {
+                g1RegionSize = "32m";
+            } else if (heapSizeGB >= 32) {
+                g1RegionSize = "16m";
+            } else if (heapSizeGB >= 16) {
+                g1RegionSize = "8m";
+            } else if (heapSizeGB >= 8) {
+                g1RegionSize = "4m";
             } else {
-                // CMS for smaller heaps (< 8GB)
-                javaOptsCommon = String.format(
-                    "-XX:ReservedCodeCacheSize=%s " +
-                    "-XX:MetaspaceSize=%s " +
-                    "-XX:MaxMetaspaceSize=%s " +
-                    "-XX:MaxDirectMemorySize=%s " +
-                    "-XX:+HeapDumpOnOutOfMemoryError " +
-                    "-XX:+PrintGCDetails " +
-                    "-XX:+PrintGCDateStamps " +
-                    "-XX:+UseConcMarkSweepGC " +
-                    "-XX:NewRatio=2 " +
-                    "-XX:+CMSScavengeBeforeRemark " +
-                    "-XX:+ParallelRefProcEnabled " +
-                    "-XX:+UseCMSInitiatingOccupancyOnly " +
-                    "-XX:CMSInitiatingOccupancyFraction=70 " +
-                    "-XX:ParallelGCThreads=%d",
-                    codeCacheSize, metaspaceSize, maxMetaspaceSize, maxDirectMemorySize,
-                    gcParallelThreads
-                );
+                g1RegionSize = "1m"; // Small heaps: smaller regions for better flexibility
             }
+
+            int maxGCPauseMillis = heapSizeGB >= 32 ? 250 : (heapSizeGB >= 16 ? 150 : 100);
+            int initiatingHeapOccupancyPercent = heapSizeGB >= 32 ? 40 : (heapSizeGB >= 16 ? 45 : 50);
+
+            // Java 17: unified JVM logging (replaces PrintGCDetails, PrintGCDateStamps, Xloggc)
+            String javaOptsCommon = String.format(
+                "-XX:ReservedCodeCacheSize=%s " +
+                "-XX:MetaspaceSize=%s " +
+                "-XX:MaxMetaspaceSize=%s " +
+                "-XX:MaxDirectMemorySize=%s " +
+                "-XX:+HeapDumpOnOutOfMemoryError " +
+                "-XX:HeapDumpPath=/data/heap_dump.hprof " +
+                "-Xlog:gc*:file=/data/gc.log:time,level,tags " +
+                "-XX:+UseG1GC " +
+                "-XX:MaxGCPauseMillis=%d " +
+                "-XX:G1HeapRegionSize=%s " +
+                "-XX:InitiatingHeapOccupancyPercent=%d " +
+                "-XX:ConcGCThreads=%d " +
+                "-XX:ParallelGCThreads=%d " +
+                "-XX:+ParallelRefProcEnabled " +
+                "-XX:+UseStringDeduplication " +
+                "-XX:+DisableExplicitGC",
+                codeCacheSize, metaspaceSize, maxMetaspaceSize, maxDirectMemorySize,
+                maxGCPauseMillis, g1RegionSize, initiatingHeapOccupancyPercent,
+                gcConcurrentThreads, gcParallelThreads
+            );
             
             // Add NUMA support for large heaps on multi-socket systems
             // NUMA helps when heap > 32GB and CPU >= 16 cores
@@ -930,22 +909,11 @@ public class EntryPoint {
                 compilerOpts += " -XX:-UseCompressedOops -XX:-UseCompressedClassPointers";
             }
             
-            // Add performance optimizations for large memory systems
-            // Note: Large pages require system configuration and can cause shared memory errors
-            // Only enable if system is properly configured (we'll disable by default to avoid errors)
+            // Java 17: -XX:+AggressiveOpts was removed in Java 11; JVM defaults are sufficient.
+            // Large pages: disabled by default (require system config). To enable:
+            // echo 20000 > /proc/sys/vm/nr_hugepages and uncomment below for heapSizeGB >= 32:
+            // performanceOpts = " -XX:+UseLargePages -XX:LargePageSizeInBytes=2m";
             String performanceOpts = "";
-            if (heapSizeGB >= 16) {
-                // Enable aggressive optimizations for large heaps
-                performanceOpts = " -XX:+AggressiveOpts";
-                // Large pages are disabled by default to avoid shared memory reservation errors
-                // To enable large pages, the system must be configured with:
-                // echo 20000 > /proc/sys/vm/nr_hugepages
-                // And proper permissions must be set
-                // Uncomment the following lines if large pages are properly configured:
-                // if (heapSizeGB >= 32) {
-                //     performanceOpts += " -XX:+UseLargePages -XX:LargePageSizeInBytes=2m";
-                // }
-            }
             
             String javaOpts = javaOptsCommon + 
                 String.format(" -Xms%dG -Xmx%dG", heapSizeGB, heapSizeGB) +
@@ -998,14 +966,9 @@ public class EntryPoint {
             System.out.println("Working directory: /data");
             System.out.println("Heap size: " + heapSizeGB + "GB");
             System.out.println("CPU count: " + cpuCount);
-            if (heapSizeGB >= 8) {
-                System.out.println("GC Configuration (G1GC):");
-                System.out.println("  Concurrent GC threads: " + gcConcurrentThreads);
-                System.out.println("  Parallel GC threads: " + gcParallelThreads);
-            } else {
-                System.out.println("GC Configuration (CMS):");
-                System.out.println("  Parallel GC threads: " + gcParallelThreads);
-            }
+            System.out.println("GC Configuration (G1GC, Java 17):");
+            System.out.println("  Concurrent GC threads: " + gcConcurrentThreads);
+            System.out.println("  Parallel GC threads: " + gcParallelThreads);
             System.out.println("JVM Optimizations:");
             System.out.println("  Code Cache: " + codeCacheSize);
             System.out.println("  Metaspace: " + metaspaceSize + " (max: " + maxMetaspaceSize + ")");

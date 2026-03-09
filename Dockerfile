@@ -21,12 +21,11 @@ RUN echo "NETWORK: $NETWORK" && \
         wget "$DOWNLOAD_URL" -O /src/FullNode.jar; \
     fi
 
-# Copy and compile Java entry point (compile with Java 8 compatibility for distroless/java:8)
 COPY ./src/main/java/EntryPoint.java /src/EntryPoint.java
 RUN mkdir -p /src/classes && \
-    javac -source 8 -target 8 -d /src/classes /src/EntryPoint.java
+    javac -source 17 -target 17 -d /src/classes /src/EntryPoint.java
 
-FROM gcr.io/distroless/java:8
+FROM gcr.io/distroless/java17-debian12
 
 # Copy compiled Java entry point
 COPY --from=build /src/classes /usr/local/tron/classes
@@ -34,4 +33,4 @@ COPY --from=build /src/FullNode.jar /usr/local/tron/FullNode.jar
 COPY ./plugins/ /usr/local/tron/plugins/
 COPY ./configs/ /etc/tron/
 
-ENTRYPOINT [ "java", "-cp", "/usr/local/tron/classes", "EntryPoint" ]
+ENTRYPOINT [ "java", "-XX:MaxRAMPercentage=75.0", "-cp", "/usr/local/tron/classes", "EntryPoint" ]
