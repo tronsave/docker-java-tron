@@ -8,13 +8,19 @@ RUN apt-get update && \
 # java-tron repository git tag
 ARG JAVA_TRON_VERSION
 ARG NETWORK
+ARG FULL_PATH
 
 WORKDIR /src
 RUN echo "NETWORK: $NETWORK" && \
     if [ "$NETWORK" = "nile" ]; then \
-        DOWNLOAD_URL="https://github.com/tron-nile-testnet/nile-testnet/releases/download/${JAVA_TRON_VERSION}/FullNode-Nile-${JAVA_TRON_VERSION#*-v}.jar"; \
+        if [ -n "$FULL_PATH" ]; then \
+            DOWNLOAD_URL="$FULL_PATH"; \
+        else \
+            DOWNLOAD_URL="https://github.com/tron-nile-testnet/nile-testnet/releases/download/${JAVA_TRON_VERSION}/FullNode-Nile-${JAVA_TRON_VERSION#*-v}.jar"; \
+        fi; \
         echo "Download URL: $DOWNLOAD_URL"; \
         wget "$DOWNLOAD_URL" -O /src/FullNode.jar; \
+   
     elif [ "$NETWORK" = "mainnet" ]; then \
         DOWNLOAD_URL="https://github.com/tronprotocol/java-tron/releases/download/${JAVA_TRON_VERSION}/FullNode.jar"; \
         echo "Download URL: $DOWNLOAD_URL"; \
